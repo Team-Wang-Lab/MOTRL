@@ -39,7 +39,7 @@ DTRtree<-function(Y,A,H,pis.hat=NULL,m.method=c("AIPW","randomForest"),
     if(is.null(mus.reg)) mus.reg<-Reg.mu(Y=Y,As=A,H=H)$mus.reg
     mus.hat<-mus.AIPW(Y=Y,A=A,pis.hat=pis.hat,mus.reg=mus.reg)
   } else if(m.method[1]=="randomForest"){
-    require(randomForest)
+    # require(randomForest)
     RF<-randomForest(Y~., data=data.frame(A,H))
     mus.hat<-matrix(NA,n,length(class.A))
     for(i in 1L:length(class.A)) mus.hat[,i]<-predict(RF,newdata=data.frame(A=rep(class.A[i],n),H))

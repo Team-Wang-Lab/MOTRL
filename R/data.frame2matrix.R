@@ -12,7 +12,6 @@
 #' @param default_value numeric: default value of matrix entries if no value exists in data.frame for the entries
 #' @return matrix: matrix containing values of data[[datatitle]] with rownames data[[rowtitle]] and colnames data[coltitle]
 #' @author Daniel Neumann
-#' @date 2017-08-29
 data.frame2matrix = function(data, rowtitle, coltitle, datatitle,
                              rowdecreasing = FALSE, coldecreasing = FALSE,
                              default_value = NA) {

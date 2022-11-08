@@ -4,14 +4,21 @@ Title: Multi-Objective Tree-based Reinforcement Learning for estimating optimal 
 Version: 0.1.0
 Author: Yao Song
 Maintainer: Yao Song <yaos@umich.edu>
-Description: We propose a multi-Objective tree-based reinforcement learning (MOTRL) method to directly estimate optimal DTRs in a multi-stage multi-treatment setting. At each stage, T-RL builds an unsupervised decision tree that directly handles the problem of optimization with multiple treatment comparisons, through a purity measure constructed with augmented inverse probability weighted estimators
+Description: We propose a multi-Objective tree-based reinforcement learning 
+    (MOTRL) method to directly estimate optimal DTRs in a multi-stage 
+    multi-treatment setting. At each stage, T-RL builds an unsupervised decision 
+    tree that directly handles the problem of optimization with multiple 
+    treatment comparisons, through a purity measure constructed with augmented 
+    inverse probability weighted estimators.
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
 Imports:
   dplyr,
   randomForest, 
-  nnet
+  nnet,
+  stringr, 
+  TRL
 Depends: R(>= 3.5.1)  
 Suggest: knitr,kable
 RoxygenNote: 7.2.0

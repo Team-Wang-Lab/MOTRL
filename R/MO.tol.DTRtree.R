@@ -20,13 +20,11 @@
 #' @param lambda.pct Minimal percent change in purity measure for split.
 #' @param minsplit Minimal node size.
 #' @param lookahead Whether or not to look into a further step of splitting to find the best split.
+#' @param PO.loss ...
 #'
 #' @return Multi-Objective DTR Tree
-#'
-#' @name MODTRtree
-#'
 #' @export
-MO.tol.DTRtree<-function(Ys,w,A,H, delta = 0, tolerate = TRUE,
+MO.tol.DTRtree <- function(Ys,w,A,H, delta = 0, tolerate = TRUE,
                     pis.hat=NULL,m.method=c("AIPW","randomForest"),
                     mus.reg=NULL,depth=5,lambda.pct=0.05,minsplit=20,
                     lookahead=F, PO.loss = NULL) {
@@ -96,7 +94,7 @@ MO.tol.DTRtree<-function(Ys,w,A,H, delta = 0, tolerate = TRUE,
       }
       mus.hat <- mus.AIPW(Y = Overall.Y,A = A,pis.hat = pis.hat, mus.reg = mus.reg)
     } else if (m.method[1]=="randomForest") {
-      require(randomForest)
+      # require(randomForest)
       RF<-randomForest(Overall.Y ~., data=data.frame(A,H))
       mus.hat<-matrix(NA,n,length(class.A))
       for(i in 1L:length(class.A)) mus.hat[,i]<-predict(RF,newdata=data.frame(A=rep(class.A[i],n),H))

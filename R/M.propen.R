@@ -13,7 +13,6 @@ M.propen<-function(A,Xs) {
   if(length(unique(A))<=1) stop("Treament options are insufficient!")
   class.A<-sort(unique(A))#class.A=Unique treatments
 
-  require(nnet)
   s.data<-data.frame(A,Xs)
   # multinomial regression with output suppressed
   model<-capture.output(mlogit<-multinom(A ~., data=s.data))

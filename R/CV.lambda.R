@@ -11,6 +11,7 @@
 #'
 #' @importFrom stats runif
 #' @importFrom stats quantile
+#' @importFrom TRL predict_DTR
 #'
 #' @export
 
@@ -34,7 +35,7 @@ CV.lambda<-function(Y,A,H,g.opt,lambda.pct,K=10,m.method=c("AIPW","randomForest"
   for(i in 1L:K){
     tree1<-DTRtree(Y[I.group != i],A[I.group != i],H[I.group != i,],m.method=m.method,
                    depth=depth,lambda.pct=lambda.pct,minsplit=minsplit)
-    g.tree<-predict_DTR(tree1,H[I.group==i,])
+    g.tree<-TRL::predict_DTR(tree1,H[I.group==i,])
     ppower<-ppower + mean(g.tree==g.opt[I.group==i]) # This gives the final percent of correctness of the tree.
   }
   return(ppower/K)
