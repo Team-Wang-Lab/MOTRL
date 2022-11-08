@@ -1,0 +1,1213 @@
+---
+title: "MOTRL Simulation"
+author: "Yao Song"
+date: "7/4/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(rpart)
+library(randomForest)
+library(wakefield)
+library(dplyr)
+```
+
+
+#  A simulation example for 1 stages and 3 treatments per stage.
+
+
+simulation Stage 1 Treatment 3
+```{r}
+# Functions for simulation.
+# 1. function to summarize simulation results
+summary2 <- function(x) { # x is a numerical vector or matrix
+  s1 <- summary(x)
+  sd2 <- function(y){
+    return(sd(y,na.rm = T))
+  }
+  if(is.matrix(x)) {
+    SD<-apply(x,2,sd2)
+  } else {
+    SD <-sd2(x)
+  }
+  s2<-list(s1,SD)
+  names(s2)<-c("summary","SD") # return summary and sd to each column
+  return(s2)
+}
+
+
+print.summary <- function(x) { # x is a numerical vector or matrix
+  avg.x = round(mean(x), 2)
+  sd2 <- function(y){
+    return(sd(y,na.rm = T))
+  }
+  if(is.matrix(x)) {
+    SD <-round(apply(x,2,sd2), 2)
+  } else {
+    SD <- round(sd2(x), 2)
+  }
+  out = paste(avg.x, " (", SD, ")", sep = "")
+  return(out)
+}
+
+
+
+# 2. function to sample treatment A
+# input matrix.pi as a matrix of sampling probabilities, which could be non-normalized
+A.sim <- function(matrix.pi) {
+  N <- nrow(matrix.pi) # sample size
+  K <- ncol(matrix.pi) # treatment options
+  if (N<=1 | K<=1) stop("Sample size or treatment options are insufficient!")
+  if (min(matrix.pi)<0) stop("Treatment probabilities should not be negative!")
+  
+  # normalize probabilities to add up to 1 and simulate treatment A for each row
+  probs <- t(apply(matrix.pi,1,function(x){x/sum(x,na.rm = TRUE)}))
+  A <- apply(probs, 1, function(x) sample(0:(K-1), 1, prob = x))
+  return(A)
+}
+```
+
+
+
+```{r}
+N<-500 # sample size of training data
+N2<-1000 # sample size of test data
+iter <- 5 # replication
+
+perc.TRL11.a = perc.TRL11.b = perc.TRL12.a = perc.TRL12.b = perc.TRL11.all = perc.TRL12.all = 
+  perc.MOTRL10.a = perc.MOTRL10.b = perc.MOTRL10.all = 
+  perc.MOTRL11.a = perc.MOTRL11.b = perc.MOTRL11.all = 
+  perc.MOTRL12.a = perc.MOTRL12.b = perc.MOTRL12.all = 
+  perc.MOTRL13.a = perc.MOTRL13.b = perc.MOTRL13.all = rep(NA,iter)
+
+EYs.TRL11 = EYs.TRL12 = 
+  EYs.MOTRL10.a = EYs.MOTRL10.b = 
+  EYs.MOTRL11.a = EYs.MOTRL11.b = 
+  EYs.MOTRL12.a = EYs.MOTRL12.b = 
+  EYs.MOTRL13.a = EYs.MOTRL13.b = rep(NA,iter) # estimated mean counterfactual outcome
+```
+
+
+# One stage scenario
+
+3 treatements and 2 objectives 
+```{r}
+# Simulation begin
+set.seed(1)
+x1<-rnorm(N)              # each covariates follows N(0,1)
+x2<-rnorm(N)
+x3<-rnorm(N)
+x4<-rnorm(N)
+x5<-rnorm(N)
+x6<-answer(N, x = c("No", "Yes"), name = "Smoke")
+X0<-cbind(x1,x2,x3,x4,x5,x6) # All of the covariates
+
+############### stage 1 data simulation ##############
+# simulate A1, true stage 1 treatment with K1=3
+pi10 <- rep(1, N)
+pi11 <- exp(0.5*x4 + 0.5*x1)
+pi12 <- exp(0.5*x5 - 0.5*x1)
+
+# weights matrix
+matrix.pi1 <- cbind(pi10, pi11, pi12)
+A1 <- A.sim(matrix.pi1)
+class.A1 <- sort(unique(A1))
+# propensity stage 1
+pis1.hat <- M.propen(A1, cbind(x1,x4,x5))
+
+# 3 models #
+################# Objective 1 ####################
+# simulate stage 1 optimal g11.opt for reward1
+g11.opt <- (x1 > -1) * ((x2 > - 0.5) + (x2 > 0.5))
+# stage 1 outcome
+# 1.这个还行 但是可以更好
+# R11 <- exp(1.5 + 0.2*x4 - abs(0.5*x1 - 1)*(A1 - g11.opt)^2) + rnorm(N,0,1) # A1与g11.opt重合的reward大, 分别是0和2的会小，且减掉的与abs(x1)成正比
+
+# #2.整体上和谐 但是TRL1太差了 有点拉 整体都不高
+R11 <- exp(1.2 + 0.4*x4 + 0.5*x5 - abs(0.5*x1 - 0.8)*(A1 - g11.opt)^2) + rnorm(N,0,1)
+# #3.不太行
+# R11 <- exp(1.3 + 0.3*x4 + 0.5*x5- abs(0.5*x1 - 0.9)*(A1 - g11.opt)^2) + rnorm(N,0,1) # A1与g11.opt重合的reward大
+
+################# Objective 2 ####################
+# simulate stage 1 optimal g12.opt for reward2
+g12.opt <- (x1 > 0)*((x3 <= 0.5) + 1) + (x1 <= 0)*(x2 > 0.5)
+# stage 1 outcome
+# 1
+R12 <- 1 + x4 + 2*x5 + 2*(A1 == 0)*(2*(g12.opt == 0) - 1) +
+  1.5*(A1 == 2)*(2*(g12.opt ==2)) - (A1 == 2)*(x6 == "Yes") + rnorm(N,0,1)
+
+# 2.没整明白
+# R12 <- 1.2 + x4 + 0.5*x5 + 2*(A1 == 0)*(2*(g12.opt == 0) - 1) + 
+#   1.5*(A1 == 2)*(2*(g12.opt ==2)) - 1.5*(A1 == 2)*(x6 == "Yes") + rnorm(N,0,1)
+
+############ Multi-Objective weighted-sum reward at stage 1 ##########
+# simulate stage 1 optimal g1.opt
+g1.opt <- (x2 <= 0.5)*(x1 > 0.5) + 2*(x2 > 0.5)*(x1 > -1)
+# stage 1 outcome
+Ys1 = cbind(R11, R12)
+
+################ Grow the trees ######################
+# DTRtree on reward1
+TRLtree11 <- TRL::DTRtree(R11, A1, H=X0, pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20))
+# DTRtree on reward2
+TRLtree12 <- TRL::DTRtree(R12, A1, H=X0, pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20))
+
+# MODTRtree on overall reward (with tolerant rate 100%, 90%, ?, ?,
+w11 = c(0.5, 0.5)
+MOTRL10 = MO.tol.DTRtree(Ys1, w = w11, A1, H=X0, delta = 0, pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
+MOTRLtree10 = MOTRL10$tree
+MOTRL11 <- MO.tol.DTRtree(Ys1, w = w11, A1, H=X0, delta = 0.1,pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
+MOTRLtree11 = MOTRL11$tree
+MOTRL12 <- MO.tol.DTRtree(Ys1, w = w11, A1, H=X0, delta = 0.3,pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
+MOTRLtree12 = MOTRL12$tree
+MOTRL13 <- MO.tol.DTRtree(Ys1, w = w11, A1, H=X0, delta = 0.5,pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
+MOTRLtree13 = MOTRL13$tree
+knitr::kable(MOTRLtree10, digits = 2)
+knitr::kable(MOTRLtree11, digits = 2)
+knitr::kable(MOTRLtree12, digits = 2)
+knitr::kable(MOTRLtree13, digits = 2)
+
+############### stage 1 Estimation ################################
+# estimated optimal regime
+# g1.TRLtree11 = TRL::predict_DTR(TRLtree11,newdata=data.frame(X0))
+# g1.TRLtree12 = TRL::predict_DTR(TRLtree12,newdata=data.frame(X0))
+# g1.MOTRLtree10 = predict_tol.DTR(MOTRLtree10, newdata=data.frame(X0)) 
+# g1.MOTRLtree11 = predict_tol.DTR(MOTRLtree11, newdata=data.frame(X0)) 
+# g1.MOTRLtree12 = predict_tol.DTR(MOTRLtree12, newdata=data.frame(X0)) 
+# g1.MOTRLtree13 = predict_tol.DTR(MOTRLtree13, newdata=data.frame(X0)) 
+```
+
+
+```{r}
+############################################
+# prediction using new data
+############################################
+set.seed(i+10000)
+x1.test = rnorm(N2)
+x2.test = rnorm(N2)
+x3.test = rnorm(N2)
+x4.test = rnorm(N2)
+x5.test = rnorm(N2)
+x6.test = answer(N2, x = c("No", "Yes"), name = "Smoke")
+X0.test = cbind(x1.test,x2.test,x3.test,x4.test,x5.test,x6.test) # All of the covariates
+
+# TRUE optimal for regime at stage 1, and reward 1 and reward 2
+g11.opt.test <- (x1.test > -1) * ((x2.test > -0.5) + (x2.test > 0.5))
+# R11.test <- exp(1.5 + 0.3*x4.test) + rnorm(N2,0,1) # has noting to do with a1
+# 1
+# R11 = exp(1.5 + 0.2*x4.test) + rnorm(N2,0,1) 
+# 2
+R11 = exp(1.2 + 0.4*x4 + 0.5*x5) + rnorm(N2,0,1)
+
+g12.opt.test <- (x1.test > 0)*((x3.test <= 0.5) + 1) + (x1.test <= 0)*(x2.test > 0.5)
+R12.test = 1 + x4 + 2*x5 + rnorm(N2,0,1)             # has noting to do with a1
+# g1.opt <- (x2.test <= 0.5)*(x1.test > 0.5) + 2*(x2.test > 0.5)*(x1.test > -1)
+# Ys1.test = cbind(R11.test, R12.test)
+
+####### stage 1 prediction #######
+# predict selection %
+g1.TRL11 = TRL::predict_DTR(TRLtree11,newdata=data.frame(X0.test))
+g1.TRL12 = TRL::predict_DTR(TRLtree12,newdata=data.frame(X0.test))
+g1.MOTRL10 = predict_tol.DTR(MOTRLtree10, newdata=data.frame(X0.test)) 
+g1.MOTRL11 = predict_tol.DTR(MOTRLtree11, newdata=data.frame(X0.test)) 
+g1.MOTRL12 = predict_tol.DTR(MOTRLtree12, newdata=data.frame(X0.test)) 
+g1.MOTRL13 = predict_tol.DTR(MOTRLtree13, newdata=data.frame(X0.test)) 
+
+
+# Outputs Test
+# # TRL
+# mean(g11.opt.test == g1.TRL11)
+# mean(g12.opt.test == g1.TRL11)
+# mean(g11.opt.test == g1.TRL12)
+# mean(g12.opt.test == g1.TRL12)
+# mean(g11.opt.test == g1.TRL11 & g12.opt.test == g1.TRL11)
+# mean(g11.opt.test == g1.TRL12 & g12.opt.test == g1.TRL12)
+# 
+# # 100%
+# mean(mapply(function(x, y) x %in% y, g11.opt.test, g1.MOTRL10))
+# mean(mapply(function(x, y) x %in% y, g12.opt.test, g1.MOTRL10))
+# mean(mapply(function(x, y, z) {x %in% z & y %in% z}, g11.opt.test, g12.opt.test, g1.MOTRL10))
+# #90%
+# mean(mapply(function(x, y) x %in% y, g11.opt.test, g1.MOTRL11))
+# mean(mapply(function(x, y) x %in% y, g12.opt.test, g1.MOTRL11))
+# mean(mapply(function(x, y, z) {x %in% z & y %in% z}, g11.opt.test, g12.opt.test, g1.MOTRL11))
+# #70%
+# mean(mapply(function(x, y) x %in% y, g11.opt.test, g1.MOTRL12))
+# mean(mapply(function(x, y) x %in% y, g12.opt.test, g1.MOTRL12))
+# mean(mapply(function(x, y, z) {x %in% z & y %in% z}, g11.opt.test, g12.opt.test, g1.MOTRL12))
+# #50%
+# mean(mapply(function(x, y) x %in% y, g11.opt.test, g1.MOTRL13))
+# mean(mapply(function(x, y) x %in% y, g12.opt.test, g1.MOTRL13))
+# mean(mapply(function(x, y, z) {x %in% z & y %in% z}, g11.opt.test, g12.opt.test, g1.MOTRL13))
+
+
+
+# percentage of true prediction
+# TRL
+perc.TRL11.a[i] = mean(g11.opt.test == g1.TRL11)
+perc.TRL11.b[i] = mean(g12.opt.test == g1.TRL11)
+perc.TRL12.a[i] = mean(g11.opt.test == g1.TRL12)
+perc.TRL12.b[i] = mean(g12.opt.test == g1.TRL12)
+perc.TRL11.all[i] = mean(g11.opt.test == g1.TRL11 & g12.opt.test == g1.TRL11)
+perc.TRL12.all[i] = mean(g11.opt.test == g1.TRL12 & g12.opt.test == g1.TRL12)
+# MOTRL
+perc.MOTRL10.a[i] = mean(mapply(function(x, y) x %in% y, g11.opt.test, g1.MOTRL10))
+perc.MOTRL10.b[i] = mean(mapply(function(x, y) x %in% y, g12.opt.test, g1.MOTRL10))
+perc.MOTRL10.all[i] =  mean(mapply(function(x, y, z) {x %in% z & y %in% z}, g11.opt.test, g12.opt.test, g1.MOTRL10))
+
+perc.MOTRL11.a[i] = mean(mapply(function(x, y) x %in% y, g11.opt.test, g1.MOTRL11))
+perc.MOTRL11.b[i] = mean(mapply(function(x, y) x %in% y, g12.opt.test, g1.MOTRL11))
+perc.MOTRL11.all[i] =  mean(mapply(function(x, y, z) {x %in% z & y %in% z}, g11.opt.test, g12.opt.test, g1.MOTRL11))
+
+perc.MOTRL12.a[i] = mean(mapply(function(x, y) x %in% y, g11.opt.test, g1.MOTRL12))
+perc.MOTRL12.b[i] = mean(mapply(function(x, y) x %in% y, g12.opt.test, g1.MOTRL12))
+perc.MOTRL12.all[i] =  mean(mapply(function(x, y, z) {x %in% z & y %in% z}, g11.opt.test, g12.opt.test, g1.MOTRL12))
+
+perc.MOTRL13.a[i] = mean(mapply(function(x, y) x %in% y, g11.opt.test, g1.MOTRL13))
+perc.MOTRL13.b[i] = mean(mapply(function(x, y) x %in% y, g12.opt.test, g1.MOTRL13))
+perc.MOTRL13.all[i] =  mean(mapply(function(x, y, z) {x %in% z & y %in% z}, g11.opt.test, g12.opt.test, g1.MOTRL13))
+
+
+
+# counterfactual mean outcome for TRL
+##### reward 1
+# 对应R11.2
+EYs.TRL11.a[i] = mean(exp(1.5 + 0.2*x4.test - abs(0.5*x1.test - 1)*(g1.TRL11 - g11.opt.test)^2) + rnorm(N2,0,1))
+EYs.TRL12.a[i] = mean(exp(1.5 + 0.2*x4.test - abs(0.5*x1.test - 1)*(g1.TRL12 - g11.opt.test)^2) + rnorm(N2,0,1))
+# 对应R11.2
+EYs.TRL11.a[i] = mean(exp(1.2 + 0.4*x4.test + 0.5*x5.test - abs(0.5*x1.test - 0.8)*(g1.TRL11 - g11.opt.test)^2) + rnorm(N2,0,1))
+EYs.TRL12.a[i] = mean(exp(1.2 + 0.4*x4.test + 0.5*x5.test - abs(0.5*x1.test - 0.8)*(g1.TRL12 - g11.opt.test)^2) + rnorm(N2,0,1))
+##### reward 2
+EYs.TRL11.b[i] = mean(1 + x4.test + 2*x5.test + 2*(g1.TRL11 == 0)*(2*(g12.opt.test == 0) - 1) +
+  1.5*(g1.TRL11 == 2)*(2*(g12.opt.test ==2)) - (g1.TRL11 == 2)*(x6.test == "Yes") + rnorm(N2,0,1))
+EYs.TRL12.b[i] = mean(1 + x4.test + 2*x5.test + 2*(g1.TRL12 == 0)*(2*(g12.opt.test == 0) - 1) +
+  1.5*(g1.TRL12 == 2)*(2*(g12.opt.test ==2)) - (g1.TRL12 == 2)*(x6.test == "Yes") + rnorm(N2,0,1))
+
+
+R11 <- exp(1.5 + 0.2*x4 - abs(0.5*x1 - 1)*(A1 - g11.opt)^2) + rnorm(N,0,1) # A1与g11.opt重合的reward大, 分别是0和2的会小，且减掉的与abs(x1)成正比
+# #2.整体上和谐 但是TRL1太差了 有点拉 整体都不高
+R11 <- exp(1.2 + 0.4*x4 + 0.5*x5 - abs(0.5*x1 - 0.8)*(A1 - g11.opt)^2) + rnorm(N,0,1)
+
+
+
+# counterfactual mean outcome for MOTRL
+##### reward 1
+# 对应R11.1
+EYs.MOTRL10.a[i] = mean(mapply(function(x, y, a, b) {exp(1.5 + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2) + rnorm(N2,0,1))}, 
+                               g1.MOTRL10, g11.opt.test, x4.test, x1.test))
+EYs.MOTRL11.a[i] = mean(mapply(function(x, y, a, b) {exp(1.5 + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2) + rnorm(N2,0,1))}, 
+                               g1.MOTRL11, g11.opt.test, x4.test, x1.test))
+EYs.MOTRL12.a[i] = mean(mapply(function(x, y, a, b) {exp(1.5 + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2) + rnorm(N2,0,1))}, 
+                               g1.MOTRL12, g11.opt.test, x4.test, x1.test))
+EYs.MOTRL13.a[i] = mean(mapply(function(x, y, a, b) {exp(1.5 + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2) + rnorm(N2,0,1))}, 
+                               g1.MOTRL13, g11.opt.test, x4.test, x1.test))
+
+
+# 对应R11.2
+EYs.MOTRL10.a[i] = mean(mapply(function(x, y, a, b, c) {exp(1.2 + 0.4*a + 0.5*c - abs(0.5*b - 0.8)*mean((unlist(x) - y)^2) + rnorm(N2,0,1))}, 
+                               g1.MOTRL10, g11.opt.test, x4.test, x1.test, x5.test))
+EYs.MOTRL11.a[i] = mean(mapply(function(x, y, a, b, c) {exp(1.2 + 0.4*a + 0.5*c - abs(0.5*b - 0.8)*mean((unlist(x) - y)^2) + rnorm(N2,0,1))}, 
+                               g1.MOTRL11, g11.opt.test, x4.test, x1.test, x5.test))
+EYs.MOTRL12.a[i] = mean(mapply(function(x, y, a, b, c) {exp(1.2 + 0.4*a + 0.5*c - abs(0.5*b - 0.8)*mean((unlist(x) - y)^2) + rnorm(N2,0,1))}, 
+                               g1.MOTRL12, g11.opt.test, x4.test, x1.test, x5.test))
+EYs.MOTRL13.a[i] = mean(mapply(function(x, y, a, b, c) {exp(1.2 + 0.4*a + 0.5*c - abs(0.5*b - 0.8)*mean((unlist(x) - y)^2) + rnorm(N2,0,1))}, 
+                               g1.MOTRL13, g11.opt.test, x4.test, x1.test, x5.test))
+##### reward 2
+EYs.MOTRL10.b[i] = mean(mapply(function(x, y, a, b, c) 
+  {1 + a + 2*b + mean(2*(x == 0)*(2*(y == 0) - 1)) + mean(1.5*(x == 2)*(2*(y ==2))) - mean((x == 2)*(c == "Yes")) + rnorm(N2,0,1)}, 
+  g1.MOTRL10, g12.opt.test, x4.test, x5.test, x6.test))
+EYs.MOTRL11.b[i] = mean(mapply(function(x, y, a, b, c) 
+  {1 + a + 2*b + mean(2*(x == 0)*(2*(y == 0) - 1)) + mean(1.5*(x == 2)*(2*(y ==2))) - mean((x == 2)*(c == "Yes")) + rnorm(N2,0,1)}, 
+  g1.MOTRL11, g12.opt.test, x4.test, x5.test, x6.test))
+EYs.MOTRL12.b[i] = mean(mapply(function(x, y, a, b, c) 
+  {1 + a + 2*b + mean(2*(x == 0)*(2*(y == 0) - 1)) + mean(1.5*(x == 2)*(2*(y ==2))) - mean((x == 2)*(c == "Yes")) + rnorm(N2,0,1)}, 
+  g1.MOTRL12, g12.opt.test, x4.test, x5.test, x6.test))
+EYs.MOTRL13.b[i] = mean(mapply(function(x, y, a, b, c) 
+  {1 + a + 2*b + mean(2*(x == 0)*(2*(y == 0) - 1)) + mean(1.5*(x == 2)*(2*(y ==2))) - mean((x == 2)*(c == "Yes")) + rnorm(N2,0,1)}, 
+  g1.MOTRL13, g12.opt.test, x4.test, x5.test, x6.test))
+
+
+
+# predict R2
+R2.tree <- exp(1.18+0.2*x2-abs(1.5*x3+2)*(g2.tree-g2.opt.tree)^2)+rnorm(N2,0,1)
+EYs[i] <- mean(R1.tree + R2.tree)
+if (i%%50==0) print(i)
+```
+
+# A 10 iter randomized sampling for 1 stage scenario
+
+```{r}
+N<-500 # sample size of training data
+N2<-1000 # sample size of test data
+iter <- 5 # replication
+
+perc.TRL11.a = perc.TRL11.b = perc.TRL12.a = perc.TRL12.b = perc.TRL11.all = perc.TRL12.all = 
+  perc.MOTRL10.a = perc.MOTRL10.b = perc.MOTRL10.all = 
+  perc.MOTRL11.a = perc.MOTRL11.b = perc.MOTRL11.all = 
+  perc.MOTRL12.a = perc.MOTRL12.b = perc.MOTRL12.all = 
+  perc.MOTRL13.a = perc.MOTRL13.b = perc.MOTRL13.all = rep(NA,iter)
+
+EYs.TRL11.a = EYs.TRL12.a = EYs.TRL11.b = EYs.TRL12.b = 
+  EYs.MOTRL10.a = EYs.MOTRL10.b = 
+  EYs.MOTRL11.a = EYs.MOTRL11.b = 
+  EYs.MOTRL12.a = EYs.MOTRL12.b = 
+  EYs.MOTRL13.a = EYs.MOTRL13.b = rep(NA,iter) # estimated mean counterfactual outcome
+
+for (i in 1:iter) {
+  # Simulation begin
+  set.seed(i+300)
+  x1<-rnorm(N)              # each covariates follows N(0,1)
+  x2<-rnorm(N)
+  x3<-rnorm(N)
+  x4<-rnorm(N)
+  x5<-rnorm(N)
+  x6<-answer(N, x = c("No", "Yes"), name = "Smoke")
+  X0<-cbind(x1,x2,x3,x4,x5,x6) # All of the covariates
+
+  ############### stage 1 data simulation ##############
+  # simulate A1, true stage 1 treatment with K1=3
+  pi10 <- rep(1, N)
+  pi11 <- exp(0.5*x4 + 0.5*x1)
+  pi12 <- exp(0.5*x5 - 0.5*x1)
+  
+  # weights matrix
+  matrix.pi1 <- cbind(pi10, pi11, pi12)
+  A1 <- A.sim(matrix.pi1)
+  class.A1 <- sort(unique(A1))
+  # propensity stage 1
+  pis1.hat <- M.propen(A1, cbind(x1,x4,x5))
+  
+  # 3 models #
+  ################# Objective 1 ####################
+  # simulate stage 1 optimal g11.opt for reward1
+  g11.opt <- (x1 > -1) * ((x2 > - 0.5) + (x2 > 0.5))
+  # stage 1 outcome
+  # 1.这个还行 但是可以更好
+  # R11 <- exp(1.5 + 0.2*x4 - abs(0.5*x1 - 1)*((A1 - g11.opt)^2)) + rnorm(N,0,1) # A1与g11.opt重合的reward大
+                                                                             # 分别是0和2的会小，且减掉的与abs(x1)成正比
+  
+  R11 <- exp(log(5) + 0.2*x4 - abs(0.5*x1 - 1)*((A1 - g11.opt)^2)) + rnorm(N,0,1)
+  
+  # #2.整体上和谐 但是TRL1太差了 有点拉 整体都不高
+  # R11 <- exp(1.2 + 0.4*x4 + 0.5*x5 - abs(0.5*x1 - 0.8)*(A1 - g11.opt)^2) + rnorm(N,0,1)
+  # #3.不太行
+  # R11 <- exp(1.3 + 0.3*x4 + 0.5*x5- abs(0.5*x1 - 0.9)*(A1 - g11.opt)^2) + rnorm(N,0,1) # A1与g11.opt重合的reward大
+  
+  ################# Objective 2 ####################
+  # simulate stage 1 optimal g12.opt for reward2
+  g12.opt <- (x1 > 0)*((x3 <= 0.5) + 1) + (x1 <= 0)*(x2 > 0.5)
+  # stage 1 outcome
+  # 1
+  R12 <- 3.5 + x4 + 2*x5 + 2*(A1 == 0)*(2*(g12.opt == 0) - 1) + 1.5*(A1 == 2)*(2*(g12.opt ==2)) - (A1 == 2)*(x6 == "Yes") + rnorm(N,0,1)
+  # 2.没整明白
+  # R12 <- 1.2 + x4 + 0.5*x5 + 2*(A1 == 0)*(2*(g12.opt == 0) - 1) + 
+  #   1.5*(A1 == 2)*(2*(g12.opt ==2)) - 1.5*(A1 == 2)*(x6 == "Yes") + rnorm(N,0,1)
+  
+  ############ Multi-Objective weighted-sum reward at stage 1 ##########
+  # simulate stage 1 optimal g1.opt
+  g1.opt <- (x2 <= 0.5)*(x1 > 0.5) + 2*(x2 > 0.5)*(x1 > -1)
+  # stage 1 outcome
+  Ys1 = cbind(R11, R12)
+  
+  ################ Grow the trees ######################
+  # DTRtree on reward1
+  TRLtree11 <- TRL::DTRtree(R11, A1, H=X0, pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20))
+  # DTRtree on reward2
+  TRLtree12 <- TRL::DTRtree(R12, A1, H=X0, pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20))
+  
+  # MODTRtree on overall reward (with tolerant rate 100%, 90%, 70%, 50%,
+  w11 = c(0.5, 0.5)
+  MOTRL10 = MO.tol.DTRtree(Ys1, w = w11, A1, H=X0, delta = 0, pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
+  MOTRLtree10 = MOTRL10$tree
+  MOTRL11 <- MO.tol.DTRtree(Ys1, w = w11, A1, H=X0, delta = 0.1,pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
+  MOTRLtree11 = MOTRL11$tree
+  MOTRL12 <- MO.tol.DTRtree(Ys1, w = w11, A1, H=X0, delta = 0.3,pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
+  MOTRLtree12 = MOTRL12$tree
+  MOTRL13 <- MO.tol.DTRtree(Ys1, w = w11, A1, H=X0, delta = 0.5,pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
+  MOTRLtree13 = MOTRL13$tree
+  
+  ############################################
+  # prediction using new data
+  ############################################
+  set.seed(i+10000)
+  x1.test = rnorm(N2)
+  x2.test = rnorm(N2)
+  x3.test = rnorm(N2)
+  x4.test = rnorm(N2)
+  x5.test = rnorm(N2)
+  x6.test = answer(N2, x = c("No", "Yes"), name = "Smoke")
+  X0.test = cbind(x1.test,x2.test,x3.test,x4.test,x5.test,x6.test) # All of the covariates
+  
+  # TRUE optimal for regime at stage 1, and reward 1 and reward 2
+  g11.opt.test <- (x1.test > -1) * ((x2.test > -0.5) + (x2.test > 0.5))
+  # R11.test <- exp(1.5 + 0.3*x4.test) + rnorm(N2,0,1) # has noting to do with a1
+  # R11 = exp(1.5 + 0.2*x4.test) + rnorm(N,0,1) 
+  
+  g12.opt.test <- (x1.test > 0)*((x3.test <= 0.5) + 1) + (x1.test <= 0)*(x2.test > 0.5)
+  # R12.test = 1 + x4 + 2*x5 + rnorm(N2,0,1)             # has noting to do with a1
+  # g1.opt <- (x2.test <= 0.5)*(x1.test > 0.5) + 2*(x2.test > 0.5)*(x1.test > -1)
+  # Ys1.test = cbind(R11.test, R12.test)
+  
+  ####### stage 1 prediction #######
+  # predict selection %
+  g1.TRL11 = TRL::predict_DTR(TRLtree11,newdata=data.frame(X0.test))
+  g1.TRL12 = TRL::predict_DTR(TRLtree12,newdata=data.frame(X0.test))
+  g1.MOTRL10 = predict_tol.DTR(MOTRLtree10, newdata=data.frame(X0.test)) 
+  g1.MOTRL11 = predict_tol.DTR(MOTRLtree11, newdata=data.frame(X0.test)) 
+  g1.MOTRL12 = predict_tol.DTR(MOTRLtree12, newdata=data.frame(X0.test)) 
+  g1.MOTRL13 = predict_tol.DTR(MOTRLtree13, newdata=data.frame(X0.test)) 
+  
+  # percentage of true prediction
+  # TRL
+  perc.TRL11.a[i] = 100 * mean(g11.opt.test == g1.TRL11)
+  perc.TRL11.b[i] = 100 * mean(g12.opt.test == g1.TRL11)
+  perc.TRL12.a[i] = 100 * mean(g11.opt.test == g1.TRL12)
+  perc.TRL12.b[i] = 100 * mean(g12.opt.test == g1.TRL12)
+  perc.TRL11.all[i] = 100 * mean(g11.opt.test == g1.TRL11 & g12.opt.test == g1.TRL11)
+  perc.TRL12.all[i] = 100 * mean(g11.opt.test == g1.TRL12 & g12.opt.test == g1.TRL12)
+  # MOTRL
+  perc.MOTRL10.a[i] = 100 * mean(mapply(function(x, y) x %in% y, g11.opt.test, g1.MOTRL10))
+  perc.MOTRL10.b[i] = 100 * mean(mapply(function(x, y) x %in% y, g12.opt.test, g1.MOTRL10))
+  perc.MOTRL10.all[i] =  100 * mean(mapply(function(x, y, z) {x %in% z & y %in% z}, g11.opt.test, g12.opt.test, g1.MOTRL10))
+  
+  perc.MOTRL11.a[i] = 100 * mean(mapply(function(x, y) x %in% y, g11.opt.test, g1.MOTRL11))
+  perc.MOTRL11.b[i] = 100 * mean(mapply(function(x, y) x %in% y, g12.opt.test, g1.MOTRL11))
+  perc.MOTRL11.all[i] =  100 * mean(mapply(function(x, y, z) {x %in% z & y %in% z}, g11.opt.test, g12.opt.test, g1.MOTRL11))
+  
+  perc.MOTRL12.a[i] = 100 * mean(mapply(function(x, y) x %in% y, g11.opt.test, g1.MOTRL12))
+  perc.MOTRL12.b[i] = 100 * mean(mapply(function(x, y) x %in% y, g12.opt.test, g1.MOTRL12))
+  perc.MOTRL12.all[i] =  100 * mean(mapply(function(x, y, z) {x %in% z & y %in% z}, g11.opt.test, g12.opt.test, g1.MOTRL12))
+  
+  perc.MOTRL13.a[i] = 100 * mean(mapply(function(x, y) x %in% y, g11.opt.test, g1.MOTRL13))
+  perc.MOTRL13.b[i] = 100 * mean(mapply(function(x, y) x %in% y, g12.opt.test, g1.MOTRL13))
+  perc.MOTRL13.all[i] =  100 * mean(mapply(function(x, y, z) {x %in% z & y %in% z}, g11.opt.test, g12.opt.test, g1.MOTRL13))
+  
+                                        # counterfactual mean outcome for TRL
+  ##### reward 1
+  # 对应R11.1  # 4.48
+  # EYs.TRL11.a[i] = mean(exp(1.5 + 0.2*x4.test - abs(0.5*x1.test - 1)*((g1.TRL11 - g11.opt.test)^2)) + rnorm(N2,0,1))
+  # EYs.TRL12.a[i] = mean(exp(1.5 + 0.2*x4.test - abs(0.5*x1.test - 1)*((g1.TRL12 - g11.opt.test)^2)) + rnorm(N2,0,1))
+  EYs.TRL11.a[i] = mean(exp(log(5) + 0.2*x4.test - abs(0.5*x1.test - 1)*((g1.TRL11 - g11.opt.test)^2)) + rnorm(N2,0,1))
+  EYs.TRL12.a[i] = mean(exp(log(5) + 0.2*x4.test - abs(0.5*x1.test - 1)*((g1.TRL12 - g11.opt.test)^2)) + rnorm(N2,0,1))
+  # 对应R11.2  # 3.32
+  # EYs.TRL11.a[i] = mean(exp(1.2 + 0.4*x4.test + 0.5*x5.test - abs(0.5*x1.test - 0.8)*((g1.TRL11 - g11.opt.test)^2)) + rnorm(N2,0,1))
+  # EYs.TRL12.a[i] = mean(exp(1.2 + 0.4*x4.test + 0.5*x5.test - abs(0.5*x1.test - 0.8)*((g1.TRL12 - g11.opt.test)^2)) + rnorm(N2,0,1))
+
+  ##### reward 2  # 2.5
+  EYs.TRL11.b[i] = mean(3.5 + x4.test + 2*x5.test + 2*(g1.TRL11 == 0)*(2*(g12.opt.test == 0) - 1) +
+    1.5*(g1.TRL11 == 2)*(2*(g12.opt.test ==2)) - (g1.TRL11 == 2)*(x6.test == "Yes") + rnorm(N2,0,1))
+  EYs.TRL12.b[i] = mean(3.5 + x4.test + 2*x5.test + 2*(g1.TRL12 == 0)*(2*(g12.opt.test == 0) - 1) +
+    1.5*(g1.TRL12 == 2)*(2*(g12.opt.test ==2)) - (g1.TRL12 == 2)*(x6.test == "Yes") + rnorm(N2,0,1))
+  
+    
+                                             # counterfactual mean outcome for MOTRL
+  ##### reward 1
+  # 对应R11.1
+  # EYs.MOTRL10.a[i] = mean(mapply(function(x, y, a, b) {exp(1.5 + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+  #                                g1.MOTRL10, g11.opt.test, x4.test, x1.test))
+  # EYs.MOTRL11.a[i] = mean(mapply(function(x, y, a, b) {exp(1.5 + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+  #                                g1.MOTRL11, g11.opt.test, x4.test, x1.test))
+  # EYs.MOTRL12.a[i] = mean(mapply(function(x, y, a, b) {exp(1.5 + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+  #                                g1.MOTRL12, g11.opt.test, x4.test, x1.test))
+  # EYs.MOTRL13.a[i] = mean(mapply(function(x, y, a, b) {exp(1.5 + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+  #                                g1.MOTRL13, g11.opt.test, x4.test, x1.test))
+  EYs.MOTRL10.a[i] = mean(mapply(function(x, y, a, b) {exp(log(5) + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+                                 g1.MOTRL10, g11.opt.test, x4.test, x1.test))
+  EYs.MOTRL11.a[i] = mean(mapply(function(x, y, a, b) {exp(log(5) + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+                                 g1.MOTRL11, g11.opt.test, x4.test, x1.test))
+  EYs.MOTRL12.a[i] = mean(mapply(function(x, y, a, b) {exp(log(5) + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+                                 g1.MOTRL12, g11.opt.test, x4.test, x1.test))
+  EYs.MOTRL13.a[i] = mean(mapply(function(x, y, a, b) {exp(log(5) + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+                                 g1.MOTRL13, g11.opt.test, x4.test, x1.test))
+  
+  # 对应R11.2
+  # EYs.MOTRL10.a[i] = mean(mapply(function(x, y, a, b, c) {exp(1.2 + 0.4*a + 0.5*c - abs(0.5*b - 0.8)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+  #                                g1.MOTRL10, g11.opt.test, x4.test, x1.test, x5.test))
+  # EYs.MOTRL11.a[i] = mean(mapply(function(x, y, a, b, c) {exp(1.2 + 0.4*a + 0.5*c - abs(0.5*b - 0.8)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+  #                                g1.MOTRL11, g11.opt.test, x4.test, x1.test, x5.test))
+  # EYs.MOTRL12.a[i] = mean(mapply(function(x, y, a, b, c) {exp(1.2 + 0.4*a + 0.5*c - abs(0.5*b - 0.8)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+  #                                g1.MOTRL12, g11.opt.test, x4.test, x1.test, x5.test))
+  # EYs.MOTRL13.a[i] = mean(mapply(function(x, y, a, b, c) {exp(1.2 + 0.4*a + 0.5*c - abs(0.5*b - 0.8)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+  #                                g1.MOTRL13, g11.opt.test, x4.test, x1.test, x5.test))
+
+  ##### reward 2
+  EYs.MOTRL10.b[i] = mean(mapply(function(x, y, a, b, c) 
+    {3.5 + a + 2*b + mean(2*(x == 0)*(2*(y == 0) - 1)) + mean(1.5*(x == 2)*(2*(y ==2))) - mean((x == 2)*(c == "Yes")) + rnorm(N2,0,1)}, 
+    g1.MOTRL10, g12.opt.test, x4.test, x5.test, x6.test))
+  EYs.MOTRL11.b[i] = mean(mapply(function(x, y, a, b, c) 
+    {3.5 + a + 2*b + mean(2*(x == 0)*(2*(y == 0) - 1)) + mean(1.5*(x == 2)*(2*(y ==2))) - mean((x == 2)*(c == "Yes")) + rnorm(N2,0,1)}, 
+    g1.MOTRL11, g12.opt.test, x4.test, x5.test, x6.test))
+  EYs.MOTRL12.b[i] = mean(mapply(function(x, y, a, b, c) 
+    {3.5 + a + 2*b + mean(2*(x == 0)*(2*(y == 0) - 1)) + mean(1.5*(x == 2)*(2*(y ==2))) - mean((x == 2)*(c == "Yes")) + rnorm(N2,0,1)}, 
+    g1.MOTRL12, g12.opt.test, x4.test, x5.test, x6.test))
+  EYs.MOTRL13.b[i] = mean(mapply(function(x, y, a, b, c) 
+    {3.5 + a + 2*b + mean(2*(x == 0)*(2*(y == 0) - 1)) + mean(1.5*(x == 2)*(2*(y ==2))) - mean((x == 2)*(c == "Yes")) + rnorm(N2,0,1)}, 
+    g1.MOTRL13, g12.opt.test, x4.test, x5.test, x6.test))
+}
+
+Result = data.frame(matrix(NA, ncol = 5, nrow = 6))
+names(Result) = c("perc.opt.a", "perc.opt.b", "perc.opt.all", "mE{R1*(g_hat)}", "mE{R2*(g_hat)}")
+
+Result$perc.opt.a = c(mean(perc.TRL11.a), mean(perc.TRL12.a), mean(perc.MOTRL10.a), mean(perc.MOTRL11.a), mean(perc.MOTRL12.a), mean(perc.MOTRL13.a))
+Result$perc.opt.b = c(mean(perc.TRL11.b), mean(perc.TRL12.b), mean(perc.MOTRL10.b), mean(perc.MOTRL11.b), mean(perc.MOTRL12.b), mean(perc.MOTRL13.b))
+Result$perc.opt.all = c(mean(perc.TRL11.all), mean(perc.TRL12.all), mean(perc.MOTRL10.all), mean(perc.MOTRL11.all), mean(perc.MOTRL12.all), mean(perc.MOTRL13.all))
+Result$`mE{R1*(g_hat)}` = c(mean(EYs.TRL11.a), mean(EYs.TRL12.a), mean(EYs.MOTRL10.a), mean(EYs.MOTRL11.a), mean(EYs.MOTRL12.a), mean(EYs.MOTRL13.a))
+Result$`mE{R2*(g_hat)}` = c(mean(EYs.TRL11.b), mean(EYs.TRL12.b), mean(EYs.MOTRL10.b), mean(EYs.MOTRL11.b), mean(EYs.MOTRL12.b), mean(EYs.MOTRL13.b))
+
+Result
+```
+
+
+
+
+
+
+1 stages 4 treatments case
+
+```{r}
+N<-500 # sample size of training data
+N2<-1000 # sample size of test data
+iter <- 5 # replication
+
+perc.TRL11.a = perc.TRL11.b = perc.TRL12.a = perc.TRL12.b = perc.TRL11.all = perc.TRL12.all = 
+  perc.MOTRL10.a = perc.MOTRL10.b = perc.MOTRL10.all = 
+  perc.MOTRL11.a = perc.MOTRL11.b = perc.MOTRL11.all = 
+  perc.MOTRL12.a = perc.MOTRL12.b = perc.MOTRL12.all = 
+  perc.MOTRL13.a = perc.MOTRL13.b = perc.MOTRL13.all = rep(NA,iter)
+
+EYs.TRL11.a = EYs.TRL12.a = EYs.TRL11.b = EYs.TRL12.b = 
+  EYs.MOTRL10.a = EYs.MOTRL10.b = 
+  EYs.MOTRL11.a = EYs.MOTRL11.b = 
+  EYs.MOTRL12.a = EYs.MOTRL12.b = 
+  EYs.MOTRL13.a = EYs.MOTRL13.b = rep(NA,iter) # estimated mean counterfactual outcome
+
+for (i in 1:iter) {
+  # Simulation begin
+  set.seed(i)
+  x1<-rnorm(N)              # each covariates follows N(0,1)
+  x2<-rnorm(N)
+  x3<-rnorm(N)
+  x4<-rnorm(N)
+  x5<-rnorm(N)
+  x6<-answer(N, x = c("No", "Yes"), name = "Smoke")
+  X0<-cbind(x1,x2,x3,x4,x5,x6) # All of the covariates
+
+  ############### stage 1 data simulation ##############
+  # simulate A1, true stage 1 treatment with K1=3
+  pi10 <- rep(1, N)
+  pi11 <- exp(0.5*x4 + 0.5*x1)
+  pi12 <- exp(0.5*x5 - 0.5*x1)
+  pi13 <- exp(0.5*x3)
+  
+  # weights matrix
+  matrix.pi1 <- cbind(pi10, pi11, pi12, pi13)
+  A1 <- A.sim(matrix.pi1)
+  class.A1 <- sort(unique(A1))
+  # propensity stage 1
+  pis1.hat <- M.propen(A1, cbind(x1,x3,x4,x5))
+  
+  # 3 models #
+  ################# Objective 1 ####################
+  # simulate stage 1 optimal g11.opt for reward1
+  g11.opt <- (x1 <= -1)*(x2 <= 0.5)*(x2 >- 0.5) + (x1 <= -1)*(x2 > 0.5)*2 + (x1 > -1)*(1 + (x2<=0.5)*(x5>0) + (x2 > 0.5)*2) 
+  # stage 1 outcome
+  # 1.这个还行 但是可以更好
+  # R11 <- exp(1.5 + 0.2*x4 - abs(0.5*x1 - 1)*((A1 - g11.opt)^2)) + rnorm(N,0,1) # A1与g11.opt重合的reward大
+                                                                             # 分别是0和2的会小，且减掉的与abs(x1)成正比
+  
+  R11 <- exp(log(5) + 0.2*x4 - abs(0.5*x1 - 1)*((A1 - g11.opt)^2)) + rnorm(N,0,1)
+  
+  # #2.整体上和谐 但是TRL1太差了 有点拉 整体都不高
+  # R11 <- exp(1.2 + 0.4*x4 + 0.5*x5 - abs(0.5*x1 - 0.8)*(A1 - g11.opt)^2) + rnorm(N,0,1)
+  # #3.不太行
+  # R11 <- exp(1.3 + 0.3*x4 + 0.5*x5- abs(0.5*x1 - 0.9)*(A1 - g11.opt)^2) + rnorm(N,0,1) # A1与g11.opt重合的reward大
+  
+  ################# Objective 2 ####################
+  # simulate stage 1 optimal g12.opt for reward2
+  g12.opt <- (x1 <= 0)*(x2 > -0.5)*(2 - (x2 < 0)) + (x1 > 0)*(3 - 2*(x6 == "Yes"))
+  # stage 1 outcome
+  # 1
+  R12 <- 3.5 + x4 + 2*x5 + 2*(A1 == 0)*(2*(g12.opt == 0) - 1) + 1.5*(A1 == 2)*(2*(g12.opt ==2)) - (A1 == 3)*(x6 == "Yes") + rnorm(N,0,1)
+  # 2.没整明白
+  # R12 <- 1.2 + x4 + 0.5*x5 + 2*(A1 == 0)*(2*(g12.opt == 0) - 1) + 
+  #   1.5*(A1 == 2)*(2*(g12.opt ==2)) - 1.5*(A1 == 2)*(x6 == "Yes") + rnorm(N,0,1)
+  
+  ############ Multi-Objective weighted-sum reward at stage 1 ##########
+  # simulate stage 1 optimal g1.opt
+  # g1.opt <- (x2 <= 0.5)*(x1 > 0.5) + 2*(x2 > 0.5)*(x1 > -1)
+  # stage 1 outcome
+  Ys1 = cbind(R11, R12)
+  
+  ################ Grow the trees ######################
+  # DTRtree on reward1
+  TRLtree11 <- TRL::DTRtree(R11, A1, H=X0, pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20))
+  # DTRtree on reward2
+  TRLtree12 <- TRL::DTRtree(R12, A1, H=X0, pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20))
+  
+  # MODTRtree on overall reward (with tolerant rate 100%, 90%, 70%, 50%,
+  w11 = c(0.5, 0.5)
+  MOTRL10 = MO.tol.DTRtree(Ys1, w = w11, A1, H=X0, delta = 0, pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
+  MOTRLtree10 = MOTRL10$tree
+  MOTRL11 <- MO.tol.DTRtree(Ys1, w = w11, A1, H=X0, delta = 0.1,pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
+  MOTRLtree11 = MOTRL11$tree
+  MOTRL12 <- MO.tol.DTRtree(Ys1, w = w11, A1, H=X0, delta = 0.3,pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
+  MOTRLtree12 = MOTRL12$tree
+  MOTRL13 <- MO.tol.DTRtree(Ys1, w = w11, A1, H=X0, delta = 0.5,pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
+  MOTRLtree13 = MOTRL13$tree
+  
+  ############################################
+  # prediction using new data
+  ############################################
+  set.seed(i+10000)
+  x1.test = rnorm(N2)
+  x2.test = rnorm(N2)
+  x3.test = rnorm(N2)
+  x4.test = rnorm(N2)
+  x5.test = rnorm(N2)
+  x6.test = answer(N2, x = c("No", "Yes"), name = "Smoke")
+  X0.test = cbind(x1.test,x2.test,x3.test,x4.test,x5.test,x6.test) # All of the covariates
+  
+  # TRUE optimal for regime at stage 1, and reward 1 and reward 2
+  g11.opt.test <- (x1.test <= -1)*(x2.test <= 0.5)*(x2.test >- 0.5) + (x1.test <= -1)*(x2.test > 0.5)*2 + (x1.test > -1)*(1 + (x2.test<=0.5)*(x5.test>0) + (x2.test > 0.5)*2) 
+  # R11.test <- exp(1.5 + 0.3*x4.test) + rnorm(N2,0,1) # has noting to do with a1
+  # R11 = exp(1.5 + 0.2*x4.test) + rnorm(N,0,1) 
+  
+  g12.opt.test <- (x1.test <= 0)*(x2.test > -0.5)*(2 - (x2.test < 0)) + (x1.test > 0)*(3 - 2*(x6.test == "Yes"))
+  # R12.test = 1 + x4 + 2*x5 + rnorm(N2,0,1)             # has noting to do with a1
+  # g1.opt <- (x2.test <= 0.5)*(x1.test > 0.5) + 2*(x2.test > 0.5)*(x1.test > -1)
+  # Ys1.test = cbind(R11.test, R12.test)
+  
+  ####### stage 1 prediction #######
+  # predict selection %
+  g1.TRL11 = TRL::predict_DTR(TRLtree11,newdata=data.frame(X0.test))
+  g1.TRL12 = TRL::predict_DTR(TRLtree12,newdata=data.frame(X0.test))
+  g1.MOTRL10 = predict_tol.DTR(MOTRLtree10, newdata=data.frame(X0.test)) 
+  g1.MOTRL11 = predict_tol.DTR(MOTRLtree11, newdata=data.frame(X0.test)) 
+  g1.MOTRL12 = predict_tol.DTR(MOTRLtree12, newdata=data.frame(X0.test)) 
+  g1.MOTRL13 = predict_tol.DTR(MOTRLtree13, newdata=data.frame(X0.test)) 
+  
+  # percentage of true prediction
+  # TRL
+  perc.TRL11.a[i] = mean(g11.opt.test == g1.TRL11)
+  perc.TRL11.b[i] = mean(g12.opt.test == g1.TRL11)
+  perc.TRL12.a[i] = mean(g11.opt.test == g1.TRL12)
+  perc.TRL12.b[i] = mean(g12.opt.test == g1.TRL12)
+  perc.TRL11.all[i] = mean(g11.opt.test == g1.TRL11 & g12.opt.test == g1.TRL11)
+  perc.TRL12.all[i] = mean(g11.opt.test == g1.TRL12 & g12.opt.test == g1.TRL12)
+  # MOTRL
+  perc.MOTRL10.a[i] = mean(mapply(function(x, y) x %in% y, g11.opt.test, g1.MOTRL10))
+  perc.MOTRL10.b[i] = mean(mapply(function(x, y) x %in% y, g12.opt.test, g1.MOTRL10))
+  perc.MOTRL10.all[i] =  mean(mapply(function(x, y, z) {x %in% z & y %in% z}, g11.opt.test, g12.opt.test, g1.MOTRL10))
+  
+  perc.MOTRL11.a[i] = mean(mapply(function(x, y) x %in% y, g11.opt.test, g1.MOTRL11))
+  perc.MOTRL11.b[i] = mean(mapply(function(x, y) x %in% y, g12.opt.test, g1.MOTRL11))
+  perc.MOTRL11.all[i] =  mean(mapply(function(x, y, z) {x %in% z & y %in% z}, g11.opt.test, g12.opt.test, g1.MOTRL11))
+  
+  perc.MOTRL12.a[i] = mean(mapply(function(x, y) x %in% y, g11.opt.test, g1.MOTRL12))
+  perc.MOTRL12.b[i] = mean(mapply(function(x, y) x %in% y, g12.opt.test, g1.MOTRL12))
+  perc.MOTRL12.all[i] =  mean(mapply(function(x, y, z) {x %in% z & y %in% z}, g11.opt.test, g12.opt.test, g1.MOTRL12))
+  
+  perc.MOTRL13.a[i] = mean(mapply(function(x, y) x %in% y, g11.opt.test, g1.MOTRL13))
+  perc.MOTRL13.b[i] = mean(mapply(function(x, y) x %in% y, g12.opt.test, g1.MOTRL13))
+  perc.MOTRL13.all[i] =  mean(mapply(function(x, y, z) {x %in% z & y %in% z}, g11.opt.test, g12.opt.test, g1.MOTRL13))
+  
+                                        # counterfactual mean outcome for TRL
+  ##### reward 1
+  # 对应R11.1  # 4.48
+  # EYs.TRL11.a[i] = mean(exp(1.5 + 0.2*x4.test - abs(0.5*x1.test - 1)*((g1.TRL11 - g11.opt.test)^2)) + rnorm(N2,0,1))
+  # EYs.TRL12.a[i] = mean(exp(1.5 + 0.2*x4.test - abs(0.5*x1.test - 1)*((g1.TRL12 - g11.opt.test)^2)) + rnorm(N2,0,1))
+  EYs.TRL11.a[i] = mean(exp(log(5) + 0.2*x4.test - abs(0.5*x1.test - 1)*((g1.TRL11 - g11.opt.test)^2)) + rnorm(N2,0,1))
+  EYs.TRL12.a[i] = mean(exp(log(5) + 0.2*x4.test - abs(0.5*x1.test - 1)*((g1.TRL12 - g11.opt.test)^2)) + rnorm(N2,0,1))
+  # 对应R11.2  # 3.32
+  # EYs.TRL11.a[i] = mean(exp(1.2 + 0.4*x4.test + 0.5*x5.test - abs(0.5*x1.test - 0.8)*((g1.TRL11 - g11.opt.test)^2)) + rnorm(N2,0,1))
+  # EYs.TRL12.a[i] = mean(exp(1.2 + 0.4*x4.test + 0.5*x5.test - abs(0.5*x1.test - 0.8)*((g1.TRL12 - g11.opt.test)^2)) + rnorm(N2,0,1))
+
+  ##### reward 2  # 2.5
+  EYs.TRL11.b[i] = mean(3.5 + x4.test + 2*x5.test + 2*(g1.TRL11 == 0)*(2*(g12.opt.test == 0) - 1) +
+    1.5*(g1.TRL11 == 2)*(2*(g12.opt.test ==2)) - (g1.TRL11 == 3)*(x6.test == "Yes") + rnorm(N2,0,1))
+  EYs.TRL12.b[i] = mean(3.5 + x4.test + 2*x5.test + 2*(g1.TRL12 == 0)*(2*(g12.opt.test == 0) - 1) +
+    1.5*(g1.TRL12 == 2)*(2*(g12.opt.test ==2)) - (g1.TRL12 == 3)*(x6.test == "Yes") + rnorm(N2,0,1))
+  
+    
+                                             # counterfactual mean outcome for MOTRL
+  ##### reward 1
+  # 对应R11.1
+  # EYs.MOTRL10.a[i] = mean(mapply(function(x, y, a, b) {exp(1.5 + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+  #                                g1.MOTRL10, g11.opt.test, x4.test, x1.test))
+  # EYs.MOTRL11.a[i] = mean(mapply(function(x, y, a, b) {exp(1.5 + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+  #                                g1.MOTRL11, g11.opt.test, x4.test, x1.test))
+  # EYs.MOTRL12.a[i] = mean(mapply(function(x, y, a, b) {exp(1.5 + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+  #                                g1.MOTRL12, g11.opt.test, x4.test, x1.test))
+  # EYs.MOTRL13.a[i] = mean(mapply(function(x, y, a, b) {exp(1.5 + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+  #                                g1.MOTRL13, g11.opt.test, x4.test, x1.test))
+  EYs.MOTRL10.a[i] = mean(mapply(function(x, y, a, b) {exp(log(5) + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+                                 g1.MOTRL10, g11.opt.test, x4.test, x1.test))
+  EYs.MOTRL11.a[i] = mean(mapply(function(x, y, a, b) {exp(log(5) + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+                                 g1.MOTRL11, g11.opt.test, x4.test, x1.test))
+  EYs.MOTRL12.a[i] = mean(mapply(function(x, y, a, b) {exp(log(5) + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+                                 g1.MOTRL12, g11.opt.test, x4.test, x1.test))
+  EYs.MOTRL13.a[i] = mean(mapply(function(x, y, a, b) {exp(log(5) + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+                                 g1.MOTRL13, g11.opt.test, x4.test, x1.test))
+  
+  # 对应R11.2
+  # EYs.MOTRL10.a[i] = mean(mapply(function(x, y, a, b, c) {exp(1.2 + 0.4*a + 0.5*c - abs(0.5*b - 0.8)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+  #                                g1.MOTRL10, g11.opt.test, x4.test, x1.test, x5.test))
+  # EYs.MOTRL11.a[i] = mean(mapply(function(x, y, a, b, c) {exp(1.2 + 0.4*a + 0.5*c - abs(0.5*b - 0.8)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+  #                                g1.MOTRL11, g11.opt.test, x4.test, x1.test, x5.test))
+  # EYs.MOTRL12.a[i] = mean(mapply(function(x, y, a, b, c) {exp(1.2 + 0.4*a + 0.5*c - abs(0.5*b - 0.8)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+  #                                g1.MOTRL12, g11.opt.test, x4.test, x1.test, x5.test))
+  # EYs.MOTRL13.a[i] = mean(mapply(function(x, y, a, b, c) {exp(1.2 + 0.4*a + 0.5*c - abs(0.5*b - 0.8)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+  #                                g1.MOTRL13, g11.opt.test, x4.test, x1.test, x5.test))
+
+  ##### reward 2
+  EYs.MOTRL10.b[i] = mean(mapply(function(x, y, a, b, c) 
+    {3.5 + a + 2*b + mean(2*(x == 0)*(2*(y == 0) - 1)) + mean(1.5*(x == 2)*(2*(y ==2))) - mean((x == 3)*(c == "Yes")) + rnorm(N2,0,1)}, 
+    g1.MOTRL10, g12.opt.test, x4.test, x5.test, x6.test))
+  EYs.MOTRL11.b[i] = mean(mapply(function(x, y, a, b, c) 
+    {3.5 + a + 2*b + mean(2*(x == 0)*(2*(y == 0) - 1)) + mean(1.5*(x == 2)*(2*(y ==2))) - mean((x == 3)*(c == "Yes")) + rnorm(N2,0,1)}, 
+    g1.MOTRL11, g12.opt.test, x4.test, x5.test, x6.test))
+  EYs.MOTRL12.b[i] = mean(mapply(function(x, y, a, b, c) 
+    {3.5 + a + 2*b + mean(2*(x == 0)*(2*(y == 0) - 1)) + mean(1.5*(x == 2)*(2*(y ==2))) - mean((x == 3)*(c == "Yes")) + rnorm(N2,0,1)}, 
+    g1.MOTRL12, g12.opt.test, x4.test, x5.test, x6.test))
+  EYs.MOTRL13.b[i] = mean(mapply(function(x, y, a, b, c) 
+    {3.5 + a + 2*b + mean(2*(x == 0)*(2*(y == 0) - 1)) + mean(1.5*(x == 2)*(2*(y ==2))) - mean((x == 3)*(c == "Yes")) + rnorm(N2,0,1)}, 
+    g1.MOTRL13, g12.opt.test, x4.test, x5.test, x6.test))
+}
+
+Result = data.frame(matrix(NA, ncol = 5, nrow = 6))
+names(Result) = c("perc.opt.a", "perc.opt.b", "perc.opt.all", "mE{R1*(g_hat)}", "mE{R2*(g_hat)}")
+
+Result$perc.opt.a = c(mean(perc.TRL11.a), mean(perc.TRL12.a), mean(perc.MOTRL10.a), mean(perc.MOTRL11.a), mean(perc.MOTRL12.a), mean(perc.MOTRL13.a))
+Result$perc.opt.b = c(mean(perc.TRL11.b), mean(perc.TRL12.b), mean(perc.MOTRL10.b), mean(perc.MOTRL11.b), mean(perc.MOTRL12.b), mean(perc.MOTRL13.b))
+Result$perc.opt.all = c(mean(perc.TRL11.all), mean(perc.TRL12.all), mean(perc.MOTRL10.all), mean(perc.MOTRL11.all), mean(perc.MOTRL12.all), mean(perc.MOTRL13.all))
+Result$`mE{R1*(g_hat)}` = c(mean(EYs.TRL11.a), mean(EYs.TRL12.a), mean(EYs.MOTRL10.a), mean(EYs.MOTRL11.a), mean(EYs.MOTRL12.a), mean(EYs.MOTRL13.a))
+Result$`mE{R2*(g_hat)}` = c(mean(EYs.TRL11.b), mean(EYs.TRL12.b), mean(EYs.MOTRL10.b), mean(EYs.MOTRL11.b), mean(EYs.MOTRL12.b), mean(EYs.MOTRL13.b))
+
+Result
+```
+
+
+# 2 stages 3 treatments
+
+```{r}
+N<-1000 # sample size of training data
+N2<-1000 # sample size of test data
+iter <- 500 # replication
+
+perc.TRL11.a = perc.TRL11.b = perc.TRL12.a = perc.TRL12.b = perc.TRL11.all = perc.TRL12.all = 
+  perc.MOTRL10.a = perc.MOTRL10.b = perc.MOTRL10.all = 
+  perc.MOTRL11.a = perc.MOTRL11.b = perc.MOTRL11.all = 
+  perc.MOTRL12.a = perc.MOTRL12.b = perc.MOTRL12.all = 
+  perc.MOTRL13.a = perc.MOTRL13.b = perc.MOTRL13.all = rep(NA,iter)
+
+EYs.TRL11.a = EYs.TRL12.a = EYs.TRL11.b = EYs.TRL12.b = 
+  EYs.MOTRL10.a = EYs.MOTRL10.b = 
+  EYs.MOTRL11.a = EYs.MOTRL11.b = 
+  EYs.MOTRL12.a = EYs.MOTRL12.b = 
+  EYs.MOTRL13.a = EYs.MOTRL13.b = rep(NA,iter) # estimated mean counterfactual outcome
+
+for (i in 1:iter) {
+  # Simulation begin
+  set.seed(i+800)
+  x1<-rnorm(N)              # each covariates follows N(0,1)
+  x2<-rnorm(N)
+  x3<-rnorm(N)
+  x4<-rnorm(N)
+  x5<-rnorm(N)
+  x6<-answer(N, x = c("No", "Yes"), name = "Smoke")
+  X0<-cbind(x1,x2,x3,x4,x5,x6) # All of the covariates
+
+  ############### stage 1 data simulation ##############
+  # simulate A1, true stage 1 treatment with K1=3
+  pi10 <- rep(1, N)
+  pi11 <- exp(0.5*x4 + 0.5*x1)
+  pi12 <- exp(0.5*x5 - 0.5*x1)
+  
+  # weights matrix
+  matrix.pi1 <- cbind(pi10, pi11, pi12)
+  A1 <- A.sim(matrix.pi1)
+  class.A1 <- sort(unique(A1))
+  # propensity stage 1
+  pis1.hat <- M.propen(A1, cbind(x1,x4,x5))
+  
+  # 3 models #
+  ################# Objective 1 ####################
+  # simulate stage 1 optimal g11.opt for reward1
+  g11.opt <- (x1 > -1) * ((x2 > - 0.5) + (x2 > 0.5))
+  # stage 1 outcome 1
+  R11 <- exp(log(5) + 0.2*x4 - abs(0.5*x1 - 1)*((A1 - g11.opt)^2)) + rnorm(N,0,1)
+  
+  ################# Objective 2 ####################
+  # simulate stage 1 optimal g12.opt for reward2
+  g12.opt <- (x1 > 0)*((x3 <= 0.5) + 1) + (x1 <= 0)*(x2 > 0.5)
+  # stage 1 outcome 2
+  R12 <- 3.5 + x4 + 2*x5 + 2*(A1 == 0)*(2*(g12.opt == 0) - 1) + 1.5*(A1 == 2)*(2*(g12.opt ==2)) - (A1 == 2)*(x6 == "Yes") + rnorm(N,0,1)
+  
+  ############ Multi-Objective weighted-sum reward at stage 1 ##########
+  # simulate stage 1 optimal g1.opt
+  # g1.opt <- (x2 <= 0.5)*(x1 > 0.5) + 2*(x2 > 0.5)*(x1 > -1)
+  # stage 1 outcome
+  Ys1 = cbind(R11, R12)
+  
+  
+  # 加
+  ############### stage 2 data simulation ##############
+  # A2, stage 2 treatment with K2=3
+  pi20<-rep(1, N)
+  pi21<-exp(0.2*R1 - 0.5)
+  pi22<-exp(0.5*x2)
+  
+  matrix.pi2<-cbind(pi20,pi21,pi22)
+  A2<-A.sim(matrix.pi2)
+  class.A2<-sort(unique(A2))
+  # propensity stage 2
+  pis21.hat<-M.propen(A2,cbind(R11,x2))
+  pis22.hat<-M.propen(A2,cbind(R12,x2))
+  pis2.hat<-M.propen(A2,cbind(R11,R12,x2))
+  
+  # optimal g21.opt
+  g21.opt <- (x3>-1)*((R11>0)+(R11>2)) # 改了
+  # stage 2 outcome R21
+  R21 <- exp(1.18 + 0.2*x2 - abs(1.5*x3 + 2)*(A2 - g21.opt)^2) + rnorm(N,0,1)
+  
+  # 需要改
+  # optimal g22.opt
+  g22.opt <- (x3>-1)*((R1>0)+(R1>2))
+  # stage 2 outcome R22
+  R22 <- exp(1.18+0.2*x2-abs(1.5*x3+2)*(A2-g2.opt)^2)+rnorm(N,0,1)
+  Ys2 = cbind(R21, R22)
+  
+  ############### stage 2 Estimation ###############################
+  # Backward induction
+  ###########################################
+  # TRL1 at stage 2
+  REG21 = Reg.mu(Y=R21, As=cbind(A1,A2), H=cbind(X0,R11))  # conditional mean model using linear regression
+  mus21.reg = REG21$mus.reg
+  TRLtree21 <- TRL::DTRtree(R21, A2, H=cbind(X0,A1,R11), pis.hat=pis21.hat, mus.reg=mus21.reg, lambda.pct=0.05, minsplit=max(0.05*N,20))
+
+  REG22 = Reg.mu(Y=R22, As=cbind(A1,A2), H=cbind(X0,R12))  # conditional mean model using linear regression
+  mus22.reg = REG22$mus.reg
+  TRLtree22 <- TRL::DTRtree(R22, A2, H=cbind(X0,A1,R12), pis.hat=pis22.hat, mus.reg=mus22.reg, lambda.pct=0.05, minsplit=max(0.05*N,20))
+  
+  # MODTRtree on overall reward (with tolerant rate 70%
+  w21 = c(0.5, 0.5)
+  REG2 = Reg.mu(Y=tcrossprod(as.matrix(Ys2), t(w21)), As=cbind(A1,A2), H=cbind(X0,R11,R12))  # conditional mean model using linear regression
+  mus2.reg = REG2$mus.reg
+  MOTRL20 = MO.tol.DTRtree(Ys2, w = w21, A2, H=cbind(X0,A1,R11,R12), delta = 0.3, 
+                           pis.hat=pis2.hat, mus.reg=mus2.reg, lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
+  MOTRLtree20 = MOTRL20$tree
+  
+  
+  
+  
+  
+  ############### stage 1 Estimation ################################
+  # calculate pseudo outcome (PO)
+
+  # expected optimal stage 2 outcome
+  E.R2.tree<-rep(NA,N)
+  # estimated optimal regime
+
+  g1.TRL21 = TRL::predict_DTR(TRLtree21,newdata=data.frame(X0,A1,R11))
+  g1.TRL22 = TRL::predict_DTR(TRLtree22,newdata=data.frame(X0,A1,R12))
+  g1.MOTRL20 = predict_tol.DTR(MOTRLtree10, newdata=data.frame(X0,A1,R11,R12)) 
+  # g1.MOTRL21 = predict_tol.DTR(MOTRLtree21, newdata=data.frame(X0,A1,R11,R12)) 
+  # g1.MOTRL22 = predict_tol.DTR(MOTRLtree22, newdata=data.frame(X0,A1,R11,R12)) 
+  # g1.MOTRL23 = predict_tol.DTR(MOTRLtree23, newdata=data.frame(X0,A1,R11,R12)) 
+  
+
+  ## use observed R2 + E(loss), modified Q learning as in Huang et al.2015
+  # random forest for the estimated mean
+  RF2<-randomForest(R2~., data=data.frame(A2,X0,A1,R1))
+  mus2.RF<-matrix(NA,N,length(class.A2))
+  for(d in 1L:length(class.A2)) mus2.RF[,d]<-predict(RF2,newdata=data.frame(A2=rep(class.A2[d],N),X0,A1,R1))
+  for(m in 1:N){
+    E.R2.tree[m]<-R2[m] + mus2.RF[m,g2.tree[m]+1]-mus2.RF[m,A2[m]+1]
+  }
+
+  # pseudo outcomes
+  PO.tree <- R1+E.R2.tree
+
+  ############################################
+  # DTRtree
+  tree1<-DTRtree(PO.tree,A1,H=X0,pis.hat=pis1.hat,lambda.pct=0.02,minsplit=max(0.05*N,20))
+  
+  ################ Grow the trees ######################
+  # DTRtree on reward1
+  TRLtree11 <- TRL::DTRtree(R11, A1, H=X0, pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20))
+  # DTRtree on reward2
+  TRLtree12 <- TRL::DTRtree(R12, A1, H=X0, pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20))
+  
+  # MODTRtree on overall reward (with tolerant rate 100%, 90%, 70%, 50%,
+  w11 = c(0.5, 0.5)
+  MOTRL10 = MO.tol.DTRtree(Ys1, w = w11, A1, H=X0, delta = 0, pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
+  MOTRLtree10 = MOTRL10$tree
+  MOTRL11 <- MO.tol.DTRtree(Ys1, w = w11, A1, H=X0, delta = 0.1,pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
+  MOTRLtree11 = MOTRL11$tree
+  MOTRL12 <- MO.tol.DTRtree(Ys1, w = w11, A1, H=X0, delta = 0.3,pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
+  MOTRLtree12 = MOTRL12$tree
+  MOTRL13 <- MO.tol.DTRtree(Ys1, w = w11, A1, H=X0, delta = 0.5,pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
+  MOTRLtree13 = MOTRL13$tree
+  
+  ############################################
+  # prediction using new data
+  ############################################
+  set.seed(i+10000)
+  x1.test = rnorm(N2)
+  x2.test = rnorm(N2)
+  x3.test = rnorm(N2)
+  x4.test = rnorm(N2)
+  x5.test = rnorm(N2)
+  x6.test = answer(N2, x = c("No", "Yes"), name = "Smoke")
+  X0.test = cbind(x1.test,x2.test,x3.test,x4.test,x5.test,x6.test) # All of the covariates
+  
+  # TRUE optimal for regime at stage 1, and reward 1 and reward 2
+  g11.opt.test <- (x1.test > -1) * ((x2.test > -0.5) + (x2.test > 0.5))
+  # R11.test <- exp(1.5 + 0.3*x4.test) + rnorm(N2,0,1) # has noting to do with a1
+  # R11 = exp(1.5 + 0.2*x4.test) + rnorm(N,0,1) 
+  
+  g12.opt.test <- (x1.test > 0)*((x3.test <= 0.5) + 1) + (x1.test <= 0)*(x2.test > 0.5)
+  # R12.test = 1 + x4 + 2*x5 + rnorm(N2,0,1)             # has noting to do with a1
+  # g1.opt <- (x2.test <= 0.5)*(x1.test > 0.5) + 2*(x2.test > 0.5)*(x1.test > -1)
+  # Ys1.test = cbind(R11.test, R12.test)
+  
+  ####### stage 1 prediction #######
+  # predict selection %
+  g1.TRL11 = TRL::predict_DTR(TRLtree11,newdata=data.frame(X0.test))
+  g1.TRL12 = TRL::predict_DTR(TRLtree12,newdata=data.frame(X0.test))
+  g1.MOTRL10 = predict_tol.DTR(MOTRLtree10, newdata=data.frame(X0.test)) 
+  g1.MOTRL11 = predict_tol.DTR(MOTRLtree11, newdata=data.frame(X0.test)) 
+  g1.MOTRL12 = predict_tol.DTR(MOTRLtree12, newdata=data.frame(X0.test)) 
+  g1.MOTRL13 = predict_tol.DTR(MOTRLtree13, newdata=data.frame(X0.test)) 
+  
+  # percentage of true prediction
+  # TRL
+  perc.TRL11.a[i] = 100 * mean(g11.opt.test == g1.TRL11)
+  perc.TRL11.b[i] = 100 * mean(g12.opt.test == g1.TRL11)
+  perc.TRL12.a[i] = 100 * mean(g11.opt.test == g1.TRL12)
+  perc.TRL12.b[i] = 100 * mean(g12.opt.test == g1.TRL12)
+  perc.TRL11.all[i] = 100 * mean(g11.opt.test == g1.TRL11 & g12.opt.test == g1.TRL11)
+  perc.TRL12.all[i] = 100 * mean(g11.opt.test == g1.TRL12 & g12.opt.test == g1.TRL12)
+  # MOTRL
+  perc.MOTRL10.a[i] = 100 * mean(mapply(function(x, y) x %in% y, g11.opt.test, g1.MOTRL10))
+  perc.MOTRL10.b[i] = 100 * mean(mapply(function(x, y) x %in% y, g12.opt.test, g1.MOTRL10))
+  perc.MOTRL10.all[i] =  100 * mean(mapply(function(x, y, z) {x %in% z & y %in% z}, g11.opt.test, g12.opt.test, g1.MOTRL10))
+  
+  perc.MOTRL11.a[i] = 100 * mean(mapply(function(x, y) x %in% y, g11.opt.test, g1.MOTRL11))
+  perc.MOTRL11.b[i] = 100 * mean(mapply(function(x, y) x %in% y, g12.opt.test, g1.MOTRL11))
+  perc.MOTRL11.all[i] =  100 * mean(mapply(function(x, y, z) {x %in% z & y %in% z}, g11.opt.test, g12.opt.test, g1.MOTRL11))
+  
+  perc.MOTRL12.a[i] = 100 * mean(mapply(function(x, y) x %in% y, g11.opt.test, g1.MOTRL12))
+  perc.MOTRL12.b[i] = 100 * mean(mapply(function(x, y) x %in% y, g12.opt.test, g1.MOTRL12))
+  perc.MOTRL12.all[i] =  100 * mean(mapply(function(x, y, z) {x %in% z & y %in% z}, g11.opt.test, g12.opt.test, g1.MOTRL12))
+  
+  perc.MOTRL13.a[i] = 100 * mean(mapply(function(x, y) x %in% y, g11.opt.test, g1.MOTRL13))
+  perc.MOTRL13.b[i] = 100 * mean(mapply(function(x, y) x %in% y, g12.opt.test, g1.MOTRL13))
+  perc.MOTRL13.all[i] =  100 * mean(mapply(function(x, y, z) {x %in% z & y %in% z}, g11.opt.test, g12.opt.test, g1.MOTRL13))
+  
+                                        # counterfactual mean outcome for TRL
+  ##### reward 1
+  # 对应R11.1  # 4.48
+  # EYs.TRL11.a[i] = mean(exp(1.5 + 0.2*x4.test - abs(0.5*x1.test - 1)*((g1.TRL11 - g11.opt.test)^2)) + rnorm(N2,0,1))
+  # EYs.TRL12.a[i] = mean(exp(1.5 + 0.2*x4.test - abs(0.5*x1.test - 1)*((g1.TRL12 - g11.opt.test)^2)) + rnorm(N2,0,1))
+  EYs.TRL11.a[i] = mean(exp(log(5) + 0.2*x4.test - abs(0.5*x1.test - 1)*((g1.TRL11 - g11.opt.test)^2)) + rnorm(N2,0,1))
+  EYs.TRL12.a[i] = mean(exp(log(5) + 0.2*x4.test - abs(0.5*x1.test - 1)*((g1.TRL12 - g11.opt.test)^2)) + rnorm(N2,0,1))
+  # 对应R11.2  # 3.32
+  # EYs.TRL11.a[i] = mean(exp(1.2 + 0.4*x4.test + 0.5*x5.test - abs(0.5*x1.test - 0.8)*((g1.TRL11 - g11.opt.test)^2)) + rnorm(N2,0,1))
+  # EYs.TRL12.a[i] = mean(exp(1.2 + 0.4*x4.test + 0.5*x5.test - abs(0.5*x1.test - 0.8)*((g1.TRL12 - g11.opt.test)^2)) + rnorm(N2,0,1))
+
+  ##### reward 2  # 2.5
+  EYs.TRL11.b[i] = mean(3.5 + x4.test + 2*x5.test + 2*(g1.TRL11 == 0)*(2*(g12.opt.test == 0) - 1) +
+    1.5*(g1.TRL11 == 2)*(2*(g12.opt.test ==2)) - (g1.TRL11 == 2)*(x6.test == "Yes") + rnorm(N2,0,1))
+  EYs.TRL12.b[i] = mean(3.5 + x4.test + 2*x5.test + 2*(g1.TRL12 == 0)*(2*(g12.opt.test == 0) - 1) +
+    1.5*(g1.TRL12 == 2)*(2*(g12.opt.test ==2)) - (g1.TRL12 == 2)*(x6.test == "Yes") + rnorm(N2,0,1))
+  
+    
+                                             # counterfactual mean outcome for MOTRL
+  ##### reward 1
+  # 对应R11.1
+  # EYs.MOTRL10.a[i] = mean(mapply(function(x, y, a, b) {exp(1.5 + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+  #                                g1.MOTRL10, g11.opt.test, x4.test, x1.test))
+  # EYs.MOTRL11.a[i] = mean(mapply(function(x, y, a, b) {exp(1.5 + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+  #                                g1.MOTRL11, g11.opt.test, x4.test, x1.test))
+  # EYs.MOTRL12.a[i] = mean(mapply(function(x, y, a, b) {exp(1.5 + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+  #                                g1.MOTRL12, g11.opt.test, x4.test, x1.test))
+  # EYs.MOTRL13.a[i] = mean(mapply(function(x, y, a, b) {exp(1.5 + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+  #                                g1.MOTRL13, g11.opt.test, x4.test, x1.test))
+  EYs.MOTRL10.a[i] = mean(mapply(function(x, y, a, b) {exp(log(5) + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+                                 g1.MOTRL10, g11.opt.test, x4.test, x1.test))
+  EYs.MOTRL11.a[i] = mean(mapply(function(x, y, a, b) {exp(log(5) + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+                                 g1.MOTRL11, g11.opt.test, x4.test, x1.test))
+  EYs.MOTRL12.a[i] = mean(mapply(function(x, y, a, b) {exp(log(5) + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+                                 g1.MOTRL12, g11.opt.test, x4.test, x1.test))
+  EYs.MOTRL13.a[i] = mean(mapply(function(x, y, a, b) {exp(log(5) + 0.2*a - abs(0.5*b - 1)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+                                 g1.MOTRL13, g11.opt.test, x4.test, x1.test))
+  
+  # 对应R11.2
+  # EYs.MOTRL10.a[i] = mean(mapply(function(x, y, a, b, c) {exp(1.2 + 0.4*a + 0.5*c - abs(0.5*b - 0.8)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+  #                                g1.MOTRL10, g11.opt.test, x4.test, x1.test, x5.test))
+  # EYs.MOTRL11.a[i] = mean(mapply(function(x, y, a, b, c) {exp(1.2 + 0.4*a + 0.5*c - abs(0.5*b - 0.8)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+  #                                g1.MOTRL11, g11.opt.test, x4.test, x1.test, x5.test))
+  # EYs.MOTRL12.a[i] = mean(mapply(function(x, y, a, b, c) {exp(1.2 + 0.4*a + 0.5*c - abs(0.5*b - 0.8)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+  #                                g1.MOTRL12, g11.opt.test, x4.test, x1.test, x5.test))
+  # EYs.MOTRL13.a[i] = mean(mapply(function(x, y, a, b, c) {exp(1.2 + 0.4*a + 0.5*c - abs(0.5*b - 0.8)*mean((unlist(x) - y)^2)) + rnorm(N2,0,1)},
+  #                                g1.MOTRL13, g11.opt.test, x4.test, x1.test, x5.test))
+
+  ##### reward 2
+  EYs.MOTRL10.b[i] = mean(mapply(function(x, y, a, b, c) 
+    {3.5 + a + 2*b + mean(2*(x == 0)*(2*(y == 0) - 1)) + mean(1.5*(x == 2)*(2*(y ==2))) - mean((x == 2)*(c == "Yes")) + rnorm(N2,0,1)}, 
+    g1.MOTRL10, g12.opt.test, x4.test, x5.test, x6.test))
+  EYs.MOTRL11.b[i] = mean(mapply(function(x, y, a, b, c) 
+    {3.5 + a + 2*b + mean(2*(x == 0)*(2*(y == 0) - 1)) + mean(1.5*(x == 2)*(2*(y ==2))) - mean((x == 2)*(c == "Yes")) + rnorm(N2,0,1)}, 
+    g1.MOTRL11, g12.opt.test, x4.test, x5.test, x6.test))
+  EYs.MOTRL12.b[i] = mean(mapply(function(x, y, a, b, c) 
+    {3.5 + a + 2*b + mean(2*(x == 0)*(2*(y == 0) - 1)) + mean(1.5*(x == 2)*(2*(y ==2))) - mean((x == 2)*(c == "Yes")) + rnorm(N2,0,1)}, 
+    g1.MOTRL12, g12.opt.test, x4.test, x5.test, x6.test))
+  EYs.MOTRL13.b[i] = mean(mapply(function(x, y, a, b, c) 
+    {3.5 + a + 2*b + mean(2*(x == 0)*(2*(y == 0) - 1)) + mean(1.5*(x == 2)*(2*(y ==2))) - mean((x == 2)*(c == "Yes")) + rnorm(N2,0,1)}, 
+    g1.MOTRL13, g12.opt.test, x4.test, x5.test, x6.test))
+}
+
+Result = data.frame(matrix(NA, ncol = 5, nrow = 6))
+names(Result) = c("perc.opt.a", "perc.opt.b", "perc.opt.all", "mE{R1*(g_hat)}", "mE{R2*(g_hat)}")
+
+Result$perc.opt.a = c(print.summary(perc.TRL11.a), print.summary(perc.TRL12.a), print.summary(perc.MOTRL10.a), print.summary(perc.MOTRL11.a), print.summary(perc.MOTRL12.a), print.summary(perc.MOTRL13.a))
+Result$perc.opt.b = c(print.summary(perc.TRL11.b), print.summary(perc.TRL12.b), print.summary(perc.MOTRL10.b), print.summary(perc.MOTRL11.b), print.summary(perc.MOTRL12.b), print.summary(perc.MOTRL13.b))
+Result$perc.opt.all = c(print.summary(perc.TRL11.all), print.summary(perc.TRL12.all), print.summary(perc.MOTRL10.all), print.summary(perc.MOTRL11.all), print.summary(perc.MOTRL12.all), print.summary(perc.MOTRL13.all))
+Result$`mE{R1*(g_hat)}` = c(print.summary(EYs.TRL11.a), print.summary(EYs.TRL12.a), print.summary(EYs.MOTRL10.a), print.summary(EYs.MOTRL11.a), print.summary(EYs.MOTRL12.a), print.summary(EYs.MOTRL13.a))
+Result$`mE{R2*(g_hat)}` = c(print.summary(EYs.TRL11.b), print.summary(EYs.TRL12.b), print.summary(EYs.MOTRL10.b), print.summary(EYs.MOTRL11.b), print.summary(EYs.MOTRL12.b), print.summary(EYs.MOTRL13.b))
+
+Result
+```
+
+
+```{r}
+############### stage 2 data simulation ##############
+# A2, stage 2 treatment with K2=3
+pi20 <- rep(1,N)
+pi21 <- exp(0.2*R1-0.5)
+pi22 <- exp(0.5*x2)
+
+matrix.pi2 <- cbind(pi20, pi21, pi22)
+A2 <- A.sim(matrix.pi2)
+class.A2<-sort(unique(A2))
+
+# propensity stage 2
+pis2.hat<-M.propen(A2,cbind(R1,x2))
+#   pis2.hat<-M.propen(A2,rep(1,N))
+
+# optimal g2.opt
+g2.opt<-(x3>-1)*((R1>0)+(R1>2))
+# stage 2 outcome R2
+R2<-exp(1.18+0.2*x2-abs(1.5*x3+2)*(A2-g2.opt)^2)+rnorm(N,0,1)
+
+
+############### stage 2 Estimation ###############################
+# Backward induction
+###########################################
+
+# conditional mean model using linear regression
+REG2<-Reg.mu(Y=R2,As=cbind(A1,A2), H=cbind(X0,R1))
+mus2.reg<-REG2$mus.reg
+
+#################
+# DTRtree
+# input: outcome Y, treatment A, covariate history H, propensity pis.hat
+# lambda.pct is minimum purity improvement as a percent of the estimated counterfactaul mean at root node without splitting
+# minsplit is minimum node size
+
+tree2<-DTRtree(R2,A2,H=cbind(X0,A1,R1),pis.hat=pis2.hat,mus.reg=mus2.reg,lambda.pct=0.02,minsplit=max(0.05*N,20))
+
+############### stage 1 Estimation ################################
+# calculate pseudo outcome (PO)
+
+# expected optimal stage 2 outcome
+E.R2.tree<-rep(NA,N)
+
+# estimated optimal regime
+g2.tree <- predict_DTR(tree2,newdata=data.frame(X0,A1,R1))
+
+## use observed R2 + E(loss), modified Q learning as in Huang et al.2015
+# random forest for the estimated mean
+RF2<-randomForest(R2~., data=data.frame(A2,X0,A1,R1))
+mus2.RF<-matrix(NA,N,length(class.A2))
+for(d in 1L:length(class.A2)) mus2.RF[,d]<-predict(RF2,newdata=data.frame(A2=rep(class.A2[d],N),X0,A1,R1))
+for(m in 1:N){
+  E.R2.tree[m]<-R2[m] + mus2.RF[m,g2.tree[m]+1]-mus2.RF[m,A2[m]+1]
+}
+
+# pseudo outcomes
+PO.tree <- R1+E.R2.tree
+
+############################################
+# DTRtree
+tree1<-DTRtree(PO.tree,A1,H=X0,pis.hat=pis1.hat,lambda.pct=0.02,minsplit=max(0.05*N,20))
+
+############################################
+# prediction using new data
+############################################
+set.seed(i+10000)
+x1<-rnorm(N2)
+x2<-rnorm(N2)
+x3<-rnorm(N2)
+x4<-rnorm(N2)
+x5<-rnorm(N2)
+X0<-cbind(x1,x2,x3,x4,x5)
+# true optimal for regime at stage 1
+g1.opt<-(x1>-1)*((x2>-0.5)+(x2>0.5))
+
+R1<-exp(1.5+0.3*x4)+rnorm(N2,0,1)
+R2<-exp(1.18+0.2*x2)+rnorm(N2,0,1)#has noting to do with a1
+
+####### stage 1 prediction #######
+
+# predict selection %
+
+g1.tree<-predict_DTR(tree1,newdata=data.frame(X0))
+
+select1[i]<-mean(g1.tree==g1.opt)
+R1.tree<-exp(1.5+0.3*x4-abs(1.5*x1-2)*(g1.tree-g1.opt)^2)+rnorm(N2,0,1)
+
+####### stage 2 prediction #######
+
+g2.tree<-predict_DTR(tree2,newdata=data.frame(X0,A1=g1.tree,R1=R1.tree))
+# true optimal for regime at stage 2
+g2.opt.tree<-(x3>-1)*((R1.tree>0)+(R1.tree>2))
+select2[i] = mean(g2.tree==g2.opt.tree)
+selects[i] = mean(g1.tree==g1.opt & g2.tree==g2.opt.tree)
+
+# predict R2
+R2.tree<-exp(1.18+0.2*x2-abs(1.5*x3+2)*(g2.tree-g2.opt.tree)^2)+rnorm(N2,0,1)
+
+EYs[i]<-mean(R1.tree+R2.tree)
+print(tree1);print(tree2)
+if(i%%50==0) print(i)  
+```
+
+```{r}
+
+
+
+```
+
+```{r}
+
+
+
+```
+
+```{r}
+
+
+
+```
+
+```{r}
+
+
+
+```
+
+
+
