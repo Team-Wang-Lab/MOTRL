@@ -145,8 +145,7 @@ MOTRLtree21 = MOTRL21$tree
 MOTRLtree21
 ```
   
-Then, calculate the cummulated mean pseudo outcomes, and use it as the outcomes (`Ys`).
-The 
+Then, calculate the accumulated mean pseudo outcomes, and use it as the outcomes (`Ys`).
 ```{r}
 # calculate average pseudo outcome 
 g2.MOTRLtree20 = predict_tol.DTR(MOTRLtree20, newdata = cbind(X0,A1,Ys1))

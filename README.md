@@ -31,12 +31,12 @@ library(MOTRL)
 
 **(a). Bi-objective scenario: one stage, three treatments**
 
-We simulate 1000 training data and 1000 testing data, with replication
-of 10 times. The weights on the two objective are set as (0.7, 0.3).
+Here we simulate some data of 1000 observeations for 6 variables. The
+weights on the two objective are set as (0.7, 0.3).
 
 ``` r
 # Simulate 6 covariates
-set.seed(100)
+set.seed(300)
 N = 1000
 x1<-rnorm(N) # each covariates follows N(0,1)
 x2<-rnorm(N)
@@ -66,32 +66,32 @@ Y12 <- 2.37 + x4 + 2*x5 + 2*(A1 == 0)*(2*(g1.opt == 0) - 1) + 1.5*(A1 == 2)*(2*(
 Ys1 = cbind(Y11, Y12)
 ```
 
-Then, we start to grow the DTR tree and the 70% tolerant DTR tree:
+Then, we start to grow the DTR tree and the 60% tolerant DTR tree:
 
 ``` r
-w0 = 0.7 # set the weight on the first objective as 0.7
-wt = c(w0, 1-w0) # 
+w0 = 0.7         # set the weight on the first objective as 0.7
+wt = c(w0, 1-w0) # the weight vector is (0.7, 0.3)
 MOTRL0 = MO.tol.DTRtree(Ys1, w = wt, A1, H=X0, delta = 0, pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
-MOTRL0$tree # return the MOTRL tree with zero tolerance (only the optimal treatment provided) 
+MOTRL0$tree      # return the MOTRL tree with zero tolerance (only the optimal treatment provided) 
 #>   node  X     cutoff      mEy opt.trt  avg.mEy tol.trt avg.mE(Y11) avg.mE(Y12)
-#> 1    1  2  0.4899484 4.202637      NA       NA      NA          NA          NA
-#> 2    2  1  0.5116090 4.531103      NA       NA      NA          NA          NA
-#> 3    3  1 -0.9030537 4.489640      NA       NA      NA          NA          NA
-#> 4    4 NA         NA 5.095424       0 5.095424       0    5.442324    4.285989
-#> 5    5 NA         NA 3.214354       1 3.214354       1    2.571037    4.715427
-#> 6    6 NA         NA 3.670902       0 3.670902       0    3.703734    3.594293
-#> 7    7 NA         NA 4.647089       2 4.647089       2    5.160838    3.448342
+#> 1    1  2  0.5169215 4.183206      NA       NA      NA          NA          NA
+#> 2    2  1  0.5098781 4.440945      NA       NA      NA          NA          NA
+#> 3    3  1 -1.0087522 4.827241      NA       NA      NA          NA          NA
+#> 4    4 NA         NA 5.082690       0 5.082690       0    5.542246    4.010394
+#> 5    5 NA         NA 3.015530       1 3.015530       1    2.322286    4.633101
+#> 6    6 NA         NA 4.832783       0 4.832783       0    4.810765    4.884157
+#> 7    7 NA         NA 4.826251       2 4.826251       2    5.201142    3.951505
 
-MOTRL1 = MO.tol.DTRtree(Ys1, w = wt, A1, H=X0, delta = 0.3, pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
-MOTRL1$tree # return the MOTRL tree with 0.3 tolerant rate 
+MOTRL1 = MO.tol.DTRtree(Ys1, w = wt, A1, H=X0, delta = 0.4, pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
+MOTRL1$tree      # return the 60% tolerant DTR tree
 #>   node  X     cutoff      mEy opt.trt  avg.mEy tol.trt avg.mE(Y11) avg.mE(Y12)
-#> 1    1  2  0.4899484 4.202637      NA       NA      NA          NA          NA
-#> 2    2  1  0.5116090 4.531103      NA       NA      NA          NA          NA
-#> 3    3  1 -0.9030537 4.489640      NA       NA      NA          NA          NA
-#> 4    4 NA         NA 5.095424       0 5.095424       0    5.442324    4.285989
-#> 5    5 NA         NA 3.214354       1 3.214354       1    2.571037    4.715427
-#> 6    6 NA         NA 3.670902       0 3.670902       0    3.703734    3.594293
-#> 7    7 NA         NA 4.647089       2 4.647089       2    5.160838    3.448342
+#> 1    1  2  0.5169215 4.183206      NA       NA      NA          NA          NA
+#> 2    2  1  0.5098781 4.440945      NA       NA      NA          NA          NA
+#> 3    3  1 -1.0087522 4.827241      NA       NA      NA          NA          NA
+#> 4    4 NA         NA 5.082690       0 5.082690       0    5.542246    4.010394
+#> 5    5 NA         NA 3.015530       1 3.015530       1    2.322286    4.633101
+#> 6    6 NA         NA 4.832783       0 4.832783       0    4.810765    4.884157
+#> 7    7 NA         NA 4.826251       2 4.826251       2    5.201142    3.951505
 
 # Run this to get the pseudo outcomes:
 # MOTRL1$POs
@@ -130,17 +130,36 @@ We start the estimation from the second stage. Same weight vector (0.7,
 
 ``` r
 # Stage 2 estimation by backward induction
-w21 = c(w0, 1-w0) # same weights (0.7, 0.3)
+w21 = c(w0, 1-w0) # same weights 
 MOTRL20 = MO.tol.DTRtree(Ys2, w = w21, A2, H=cbind(X0,A1,Ys1), delta = 0, pis.hat=pis1.hat, 
-                         lambda.pct=0.02, minsplit=max(0.05*N,20),depth = 4)
+                         lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
 MOTRLtree20 = MOTRL20$tree
-MOTRL21 <- MO.tol.DTRtree(Ys2, w = w21, A2, H=cbind(X0,A1,Ys1), delta = 0.3, pis.hat=pis1.hat, 
-                          lambda.pct=0.02, minsplit=max(0.05*N,20),depth = 4)
+MOTRLtree20
+#>   node  X      cutoff      mEy opt.trt  avg.mEy tol.trt avg.mE(Y21) avg.mE(Y22)
+#> 1    1  1 -0.03085405 3.851566      NA       NA      NA          NA          NA
+#> 2    2  5 -0.50321659 4.125072      NA       NA      NA          NA          NA
+#> 3    3  3 -0.99077712 5.403090      NA       NA      NA          NA          NA
+#> 4    4 NA          NA 5.076621       0 5.076621       0    5.598989    3.857762
+#> 5    5 NA          NA 3.696732       1 3.696732       1    3.249158    4.741071
+#> 6    6 NA          NA 5.115887       0 5.115887       0    5.683258    3.792024
+#> 7    7 NA          NA 5.462397       2 5.462397       2    5.801681    4.670734
+
+MOTRL21 <- MO.tol.DTRtree(Ys2, w = w21, A2, H=cbind(X0,A1,Ys1), delta = 0.4, pis.hat=pis1.hat, 
+                          lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
 MOTRLtree21 = MOTRL21$tree
+MOTRLtree21
+#>   node  X      cutoff      mEy opt.trt  avg.mEy tol.trt avg.mE(Y21) avg.mE(Y22)
+#> 1    1  1 -0.03085405 3.851566      NA       NA      NA          NA          NA
+#> 2    2  5 -0.50321659 4.125072      NA       NA      NA          NA          NA
+#> 3    3  3 -0.99077712 5.403090      NA       NA      NA          NA          NA
+#> 4    4 NA          NA 5.076621       0 5.076621       0    5.598989    3.857762
+#> 5    5 NA          NA 3.696732       1 3.696732       1    3.249158    4.741071
+#> 6    6 NA          NA 5.115887       0 5.115887       0    5.683258    3.792024
+#> 7    7 NA          NA 5.462397       2 5.462397       2    5.801681    4.670734
 ```
 
-Then, calculate the cummulated mean pseudo outcomes, and use it as the
-outcomes (`Ys`). The
+Then, calculate the accumulated mean pseudo outcomes, and use it as the
+outcomes (`Ys`).
 
 ``` r
 # calculate average pseudo outcome 
@@ -154,24 +173,22 @@ MOTRL10 = MO.tol.DTRtree(PO.MOTRL20, w = w11, A1, H=X0, delta = 0, pis.hat=pis1.
                          lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
 MOTRL10$tree
 #>   node  X     cutoff      mEy opt.trt  avg.mEy tol.trt avg.mE(Y11) avg.mE(Y12)
-#> 1    1  2  0.4899484 6.273591      NA       NA      NA          NA          NA
-#> 2    2 NA         NA 6.090829       0 6.090829       0    6.401525    5.365874
-#> 3    3  1 -0.9030537 7.430423      NA       NA      NA          NA          NA
-#> 6    6 NA         NA 6.364902       0 6.364902       0    6.553523    5.924786
-#> 7    7 NA         NA 7.635331       2 7.635331       2    8.359224    5.946249
-MOTRL11 <- MO.tol.DTRtree(PO.MOTRL21, w = w11, A1, H=X0, delta = 0.3,pis.hat=pis1.hat, 
+#> 1    1  2  0.5169215 6.349854      NA       NA      NA          NA          NA
+#> 2    2  1  0.5098781 6.657724      NA       NA      NA          NA          NA
+#> 3    3  1 -1.0087522 7.986483      NA       NA      NA          NA          NA
+#> 4    4 NA         NA 6.849552       0 6.849552       0    6.826217    6.904000
+#> 5    5 NA         NA 6.231644       1 6.231644       1    5.911325    6.979053
+#> 6    6 NA         NA 7.496037       0 7.496037       0    7.301645    7.949619
+#> 7    7 NA         NA 8.074062       2 8.074062       2    8.674228    6.673677
+MOTRL11 <- MO.tol.DTRtree(PO.MOTRL21, w = w11, A1, H=X0, delta = 0.4,pis.hat=pis1.hat, 
                             lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
 MOTRL11$tree
 #>   node  X     cutoff      mEy opt.trt  avg.mEy tol.trt avg.mE(Y11) avg.mE(Y12)
-#> 1    1  2  0.4899484 6.273591      NA       NA      NA          NA          NA
-#> 2    2 NA         NA 6.090829       0 6.090829       0    6.401525    5.365874
-#> 3    3  1 -0.9030537 7.430423      NA       NA      NA          NA          NA
-#> 6    6 NA         NA 6.364902       0 6.364902       0    6.553523    5.924786
-#> 7    7 NA         NA 7.635331       2 7.635331       2    8.359224    5.946249
+#> 1    1  2  0.5169215 6.349854      NA       NA      NA          NA          NA
+#> 2    2  1  0.5098781 6.657724      NA       NA      NA          NA          NA
+#> 3    3  1 -1.0087522 7.986483      NA       NA      NA          NA          NA
+#> 4    4 NA         NA 6.849552       0 6.849552       0    6.826217    6.904000
+#> 5    5 NA         NA 6.231644       1 6.231644       1    5.911325    6.979053
+#> 6    6 NA         NA 7.496037       0 7.496037       0    7.301645    7.949619
+#> 7    7 NA         NA 8.074062       2 8.074062       2    8.674228    6.673677
 ```
-
-You’ll still need to render `README.Rmd` regularly, to keep `README.md`
-up-to-date. `devtools::build_readme()` is handy for this. You could also
-use GitHub Actions to re-render `README.Rmd` every time you push. An
-example workflow can be found here:
-<https://github.com/r-lib/actions/tree/v1/examples>.
