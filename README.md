@@ -8,8 +8,8 @@
 
 The goal of MOTRL is to directly estimate optimal dynamic treatment
 regime (DTR) or tolerant DTR (tDTR) in a multi-stage multi-treatment
-setting. The user can self-define their preference on different
-priorities and the tolerant rate at each stages.
+setting. The users can self-define their preference on different
+priorities and the tolerant rate at each stage.
 
 ## Installation
 
@@ -99,7 +99,7 @@ MOTRL1$tree      # return the 60% tolerant DTR tree
 # MOTRL1$PO.loss
 ```
 
-**(b). Bi-objective scenario: two stage, three treatments**
+**(b). Bi-objective scenario: two stages, three treatments**
 
 Using the above simulated data as stage 1 data, we continue simulate a
 stage two data:
@@ -191,4 +191,99 @@ MOTRL11$tree
 #> 5    5 NA         NA 6.231644       1 6.231644       1    5.911325    6.979053
 #> 6    6 NA         NA 7.496037       0 7.496037       0    7.301645    7.949619
 #> 7    7 NA         NA 8.074062       2 8.074062       2    8.674228    6.673677
+```
+
+**(c). Tri-objective scenario: one stage, three treatments**
+
+``` r
+N<-1000 # sample size of training data
+N2<-1000 # sample size of test data
+iter <- 5 # replication
+w1 = 0.35
+w2 = 0.35
+w3 = 1 - w1 - w2
+
+# Simulation begin
+set.seed(300)
+x1<-rnorm(N)              # each covariates follows N(0,1)
+x2<-rnorm(N)
+x3<-rnorm(N)
+x4<-rnorm(N)
+x5<-rnorm(N)
+x6<-rnorm(N)              # each covariates follows N(0,1)
+x7<-rnorm(N)
+x8<-rnorm(N)
+x9<-rnorm(N)
+x10<-answer(N, x = c("No", "Yes"), name = "Smoke")
+  
+X0<-cbind(x1,x2,x3,x4,x5,x6,x7,x8,x9,x10) # All of the covariates
+
+############### stage 1 data simulation ##############
+# simulate A1, true stage 1 treatment with K1=3
+pi10 <- rep(1, N)
+pi11 <- exp(0.5*x4 + 0.5*x1 + 0.05*x3)
+pi12 <- exp(0.5*x5 - 0.5*x1 + 0.5*x2)
+  
+# weights matrix
+matrix.pi1 <- cbind(pi10, pi11, pi12)
+A1 <- A.sim(matrix.pi1)
+class.A1 <- sort(unique(A1))
+# propensity stage 1
+pis1.hat <- M.propen(A1, cbind(x1,x2, x3,x4,x5))
+  
+# g1.opt <- (x2 <= 0.5)*(x1 > 0.5) + 2*(x2 > 0.5)*(x1 > -1)
+# change !
+g1.opt <- (x1 <= 0.5)*(x2 > -0.2) + (x1 > 0.5)*2*(1 - (x3 > -1)*(x3 < -0.5))
+  
+# outcome 1
+Y11 <- 0.57 + exp(1.67 + 0.2*x6 - abs(1.5*x7 + x4 - 1)*((A1 - g1.opt)^2)) - 
+    3*(A1 == 1) + rnorm(N,0,1) # noise on A = 1 and 2
+# outcome 2
+Y12 <- 1.9 + x5 + 0.5*x6 + 2*(A1 == 0)*(2*(g1.opt == 0) - 1) + 1.5*(A1 == 2)*(2*(g1.opt == 2) -1) + 0.5*(A1 == 1)*(2*(g1.opt == 1) -1) +
+    1.8*(exp((A1 == 1)) -1) + rnorm(N,0,1) # noise on A = 1 and 2
+# outcome 3
+Y13 <- 5.32 + x8 - exp(0.1 + 2*(x10 == "No"))*(1*(A1 == 1) + 0.5*(A1 == 0) + 0.1*(A1 == 2)) + rnorm(N,0,1) # noise on A = 1 and 2
+  
+# stage 1 outcome
+Ys1 = cbind(Y11, Y12, Y13)
+
+
+# MODTRtree and average potential outcome for each of the three objectives (with tolerant rate 100%, 60%)
+wt = c(w1, w2, w3)
+MOTRL0 = MO.tol.DTRtree(Ys1, w = wt, A1, H=X0, delta = 0, pis.hat=pis1.hat, lambda.pct=0.02, minsplit=20,depth = 4)
+MOTRL0$tree
+#>   node  X     cutoff      mEy opt.trt  avg.mEy tol.trt avg.mE(Y11) avg.mE(Y12)
+#> 1    1  2 -0.2473256 3.169106      NA       NA      NA          NA          NA
+#> 2    2  1  0.4898486 4.339976      NA       NA      NA          NA          NA
+#> 3    3  1  0.4257702 3.395700      NA       NA      NA          NA          NA
+#> 4    4 NA         NA 4.195472       0 4.195472       0    5.761938    3.607119
+#> 5    5 NA         NA 4.644771       2 4.644771       2    6.380001    2.660269
+#> 6    6 NA         NA 2.953202       1 2.953202       1    2.713906    5.338161
+#> 7    7 NA         NA 4.181280       2 4.181280       2    4.710263    3.068433
+#>   avg.mE(Y13)
+#> 1          NA
+#> 2          NA
+#> 3          NA
+#> 4   3.0543405
+#> 5   4.9355880
+#> 6   0.4499286
+#> 7   4.8624555
+MOTRL1 <- MO.tol.DTRtree(Ys1, w = wt, A1, H=X0, delta = 0.4,pis.hat=pis1.hat, lambda.pct=0.02, minsplit=20,depth = 4)
+MOTRL1$tree
+#>   node  X     cutoff      mEy opt.trt  avg.mEy tol.trt avg.mE(Y11) avg.mE(Y12)
+#> 1    1  2 -0.2473256 3.169106      NA       NA      NA          NA          NA
+#> 2    2  1  0.4898486 4.339976      NA       NA      NA          NA          NA
+#> 3    3  1  0.4257702 3.395700      NA       NA      NA          NA          NA
+#> 4    4 NA         NA 4.195472       0 4.195472       0    5.761938    3.607119
+#> 5    5 NA         NA 4.644771       2 4.644771       2    6.380001    2.660269
+#> 6    6 NA         NA 2.953202       1 2.708146    1, 2    2.573929    2.856121
+#> 7    7 NA         NA 4.181280       2 4.181280       2    4.710263    3.068433
+#>   avg.mE(Y13)
+#> 1          NA
+#> 2          NA
+#> 3          NA
+#> 4    3.054341
+#> 5    4.935588
+#> 6    2.692097
+#> 7    4.862455
 ```

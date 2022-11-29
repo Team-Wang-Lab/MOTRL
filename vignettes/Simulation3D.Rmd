@@ -1,8 +1,8 @@
 ---
-title: "MOTRL vignette 3D"
+title: "MOTRLvignette3D"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{my-vignette}
+  %\VignetteIndexEntry{MOTRLvignette3D}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -18,18 +18,10 @@ knitr::opts_chunk$set(
 knitr::opts_chunk$set(echo = TRUE)
 library(rpart)
 library(randomForest)
-library(wakefield)
 library(dplyr)
-library(psych)
-library(psychTools)
 library(readr)
-library(scales)
-library(rgl)
-library(graphics)
-library(lattice)
-library(plot3D)
+library(wakefield)
 library(tidyr)
-library(plot3Drgl)
 library(MOTRL)
 ```
 
@@ -316,7 +308,7 @@ Result
 ```{r}
 N<-1000 # sample size of training data
 N2<-1000 # sample size of test data
-iter <- 10 # replication
+iter <- 5 # replication
 w1 = 0.35
 w2 = 0.35
 w3 = 1 - w1 - w2

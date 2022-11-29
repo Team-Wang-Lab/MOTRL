@@ -34,7 +34,7 @@ A.sim <- function(matrix.pi) {
 <!-- badges: start -->
 <!-- badges: end -->
 
-The goal of MOTRL is to directly estimate optimal dynamic treatment regime (DTR) or tolerant DTR (tDTR) in a multi-stage multi-treatment setting. The user can self-define their preference on different priorities and the tolerant rate at each stages.
+The goal of MOTRL is to directly estimate optimal dynamic treatment regime (DTR) or tolerant DTR (tDTR) in a multi-stage multi-treatment setting. The users can self-define their preference on different priorities and the tolerant rate at each stage.
 
 ## Installation
 
@@ -106,7 +106,7 @@ MOTRL1$tree      # return the 60% tolerant DTR tree
 # MOTRL1$PO.loss
 ```
 
-**(b). Bi-objective scenario: two stage, three treatments**
+**(b). Bi-objective scenario: two stages, three treatments**
 
 Using the above simulated data as stage 1 data, we continue simulate a stage two data: 
 ```{r}
@@ -161,3 +161,73 @@ MOTRL11 <- MO.tol.DTRtree(PO.MOTRL21, w = w11, A1, H=X0, delta = 0.4,pis.hat=pis
                             lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
 MOTRL11$tree
 ```
+
+**(c). Tri-objective scenario: one stage, three treatments**
+
+```{r}
+N<-1000 # sample size of training data
+N2<-1000 # sample size of test data
+iter <- 5 # replication
+w1 = 0.35
+w2 = 0.35
+w3 = 1 - w1 - w2
+
+# Simulation begin
+set.seed(300)
+x1<-rnorm(N)              # each covariates follows N(0,1)
+x2<-rnorm(N)
+x3<-rnorm(N)
+x4<-rnorm(N)
+x5<-rnorm(N)
+x6<-rnorm(N)              # each covariates follows N(0,1)
+x7<-rnorm(N)
+x8<-rnorm(N)
+x9<-rnorm(N)
+x10<-answer(N, x = c("No", "Yes"), name = "Smoke")
+  
+X0<-cbind(x1,x2,x3,x4,x5,x6,x7,x8,x9,x10) # All of the covariates
+
+############### stage 1 data simulation ##############
+# simulate A1, true stage 1 treatment with K1=3
+pi10 <- rep(1, N)
+pi11 <- exp(0.5*x4 + 0.5*x1 + 0.05*x3)
+pi12 <- exp(0.5*x5 - 0.5*x1 + 0.5*x2)
+  
+# weights matrix
+matrix.pi1 <- cbind(pi10, pi11, pi12)
+A1 <- A.sim(matrix.pi1)
+class.A1 <- sort(unique(A1))
+# propensity stage 1
+pis1.hat <- M.propen(A1, cbind(x1,x2, x3,x4,x5))
+  
+# g1.opt <- (x2 <= 0.5)*(x1 > 0.5) + 2*(x2 > 0.5)*(x1 > -1)
+# change !
+g1.opt <- (x1 <= 0.5)*(x2 > -0.2) + (x1 > 0.5)*2*(1 - (x3 > -1)*(x3 < -0.5))
+  
+# outcome 1
+Y11 <- 0.57 + exp(1.67 + 0.2*x6 - abs(1.5*x7 + x4 - 1)*((A1 - g1.opt)^2)) - 
+    3*(A1 == 1) + rnorm(N,0,1) # noise on A = 1 and 2
+# outcome 2
+Y12 <- 1.9 + x5 + 0.5*x6 + 2*(A1 == 0)*(2*(g1.opt == 0) - 1) + 1.5*(A1 == 2)*(2*(g1.opt == 2) -1) + 0.5*(A1 == 1)*(2*(g1.opt == 1) -1) +
+    1.8*(exp((A1 == 1)) -1) + rnorm(N,0,1) # noise on A = 1 and 2
+# outcome 3
+Y13 <- 5.32 + x8 - exp(0.1 + 2*(x10 == "No"))*(1*(A1 == 1) + 0.5*(A1 == 0) + 0.1*(A1 == 2)) + rnorm(N,0,1) # noise on A = 1 and 2
+  
+# stage 1 outcome
+Ys1 = cbind(Y11, Y12, Y13)
+
+
+# MODTRtree and average potential outcome for each of the three objectives (with tolerant rate 100%, 60%)
+wt = c(w1, w2, w3)
+MOTRL0 = MO.tol.DTRtree(Ys1, w = wt, A1, H=X0, delta = 0, pis.hat=pis1.hat, lambda.pct=0.02, minsplit=20,depth = 4)
+MOTRL0$tree
+MOTRL1 <- MO.tol.DTRtree(Ys1, w = wt, A1, H=X0, delta = 0.4,pis.hat=pis1.hat, lambda.pct=0.02, minsplit=20,depth = 4)
+MOTRL1$tree
+```
+
+
+
+
+
+
+

@@ -18,7 +18,8 @@ Imports:
   randomForest, 
   nnet,
   stringr, 
-  TRL
+  TRL,
+  rpart
 Depends: R(>= 3.5.1)  
 Suggest: knitr,kable
 RoxygenNote: 7.2.0
