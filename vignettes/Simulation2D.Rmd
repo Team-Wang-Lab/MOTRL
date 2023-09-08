@@ -24,7 +24,7 @@ library(dplyr)
 library(readr)
 ```
 
-## Functions for simulation.
+## Auxiliary Functions for Simulation
 
 ```{r}
 # 1. function to summarize simulation results
@@ -73,16 +73,27 @@ A.sim <- function(matrix.pi) {
 ```
 
 
-## (A). One stage, three treatments
+# Simulation for Bi-objective Cases
 
-(i) Small sample size (N = 500), small noise ($\varepsilon$~N(0,1))
-(ii) Large sample size (N = 1000), small noise ($\varepsilon$~N(0,1))
+## A. One stage, three treatments
+
+Modify `N` for:
+
+- Small sample size (N = 500),
+
+- Large sample size (N = 1000).
+
+Modify `iter` as number of simulation replications. (`iter` = 100 for simulation result in the paper)
+
+Modify `w0` as the weight on the first objective ($0 < w_0 < 1$).
+
+***A.(i) Small noise ($\varepsilon$~N(0,1))***
 
 ```{r}
 N<-1000 # sample size of training data
 N2<-1000 # sample size of test data
 iter <- 5 # replication
-w0 = 0.7
+w0 = 0.5
 
 perc.TRL11 = perc.TRL12 = perc.MOTRL10 = perc.MOTRL11 = perc.MOTRL12 = perc.MOTRL13 = rep(NA,iter)
 EYs.TRL11.a = EYs.TRL12.a = EYs.TRL11.b = EYs.TRL12.b = 
@@ -237,13 +248,13 @@ Result$`mE{Y2*(g_hat)}` = c(print.summary(EYs.TRL11.b), print.summary(EYs.TRL12.
 Result
 ```
 
-(iii) Small sample size (N = 500), large noise ($\varepsilon$~N(0,5))
-(iv) Large sample size (N = 1000), large noise ($\varepsilon$~N(0,5))
+***B.(i) Large noise ($\varepsilon$~N(0,5))***
 
 ```{r}
 N<-1000 # sample size of training data
 N2<-1000 # sample size of test data
 iter <- 5 # replication
+w0 = 0.5
 
 perc.TRL11 = perc.TRL12 = perc.MOTRL10 = perc.MOTRL11 = perc.MOTRL12 = perc.MOTRL13 = rep(NA,iter)
 EYs.TRL11.a = EYs.TRL12.a = EYs.TRL11.b = EYs.TRL12.b = 
@@ -395,7 +406,8 @@ Result$`mE{Y2*(g_hat)}` = c(print.summary(EYs.TRL11.b), print.summary(EYs.TRL12.
 Result
 ```
 
-## (B). Two stage, three treatments
+
+## B. Two stage, three treatments
 
 ```{r}
 N<-1000 # sample size of training data
