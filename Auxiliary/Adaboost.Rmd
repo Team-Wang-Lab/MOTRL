@@ -1,0 +1,32 @@
+---
+title: "Adaboost"
+author: "Yao Song"
+date: "8/16/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(adabag)
+library(caret)  
+```
+
+## 
+
+```{r}
+data <- iris               # reads the dataset
+parts = createDataPartition(data$Species, p = 0.8, list = F)
+train = data[parts, ]
+test = data[-parts, ]    
+# train a model using our training data
+model_adaboost <- boosting(Species~., data=train, boos=TRUE, mfinal=3)
+summary(model_adaboost)
+
+#use model to make predictions on test data
+pred_test = predict(model_adaboost, test)
+
+# Returns the prediction values of test data along with the confusion matrix
+pred_test
+
+accuracy_model
+```
