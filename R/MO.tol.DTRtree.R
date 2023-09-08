@@ -25,7 +25,7 @@
 #' @return Multi-Objective DTR Tree
 #' @export
 MO.tol.DTRtree <- function(Ys,w,A,H, delta = 0, tolerate = TRUE,
-                    pis.hat=NULL,m.method=c("AIPW","randomForest"),
+                    pis.hat=NULL,m.method=c("AIPW","randomForest", "Adaboost"),
                     mus.reg=NULL,depth=5,lambda.pct=0.05,minsplit=20,
                     lookahead=F, PO.loss = NULL) {
 
@@ -59,20 +59,13 @@ MO.tol.DTRtree <- function(Ys,w,A,H, delta = 0, tolerate = TRUE,
   if (tolerate) {
     tol.rate = 1 - delta
 
-    # initialization
+    # Initialization
     # indicator for subset data
-    n <- length(Overall.Y) # number of people
-    I.node <- rep(1,n) # indicator of nodes
+    n <- length(Overall.Y)    # number of people
+    I.node <- rep(1,n)        # indicator of nodes
     class.A <- sort(unique(A))
-
-    # output <- matrix(NA,1,5)
-    # *Modification: matrix -> data.frame
-    # *Modification: add two column for avg.mEy and tol.trt
-    # tree <- as.data.frame(matrix(NA,1,7))
     tree <- as.data.frame(matrix(NA,2^(depth+1)-1,7+Obj.dim))
-    # colnames(output)<-c("node","X","cutoff","mEy","opt.trt")
-    # *Modification: change colnames to names
-    # *Modification: add two column for avg.mEy and tol.trt
+
     if (is.null(colnames(Ys))) {
       outcome.names = apply(matrix(1:Obj.dim), 1, function(x) paste("avg.mE(Objective.", as.character(x), ")", sep = ""))
     } else {
@@ -83,7 +76,7 @@ MO.tol.DTRtree <- function(Ys,w,A,H, delta = 0, tolerate = TRUE,
 
 
     # estimate mus.hat if not given
-    if (m.method[1]=="AIPW") {
+    if (m.method == "AIPW") {
       # estimate propensity matrix if not given, using all data
       # same propensity for all subset data
       if (is.null(pis.hat)) {
@@ -93,12 +86,20 @@ MO.tol.DTRtree <- function(Ys,w,A,H, delta = 0, tolerate = TRUE,
         mus.reg <- Reg.mu(Y = Overall.Y, As = A, H = H)$mus.reg
       }
       mus.hat <- mus.AIPW(Y = Overall.Y,A = A,pis.hat = pis.hat, mus.reg = mus.reg)
-    } else if (m.method[1]=="randomForest") {
-      # require(randomForest)
-      RF<-randomForest(Overall.Y ~., data=data.frame(A,H))
-      mus.hat<-matrix(NA,n,length(class.A))
-      for(i in 1L:length(class.A)) mus.hat[,i]<-predict(RF,newdata=data.frame(A=rep(class.A[i],n),H))
-    } else{
+    } else if (m.method == "randomForest") {
+      require(randomForest)
+      RF <- randomForest(Overall.Y ~., data=data.frame(A,H))
+      mus.hat <- matrix(NA,n,length(class.A))
+      for (i in 1L:length(class.A))
+        mus.hat[,i]<-predict(RF,newdata=data.frame(A=rep(class.A[i],n),H))
+    } else if (m.method == "Adaboost") {
+      require(adabag)
+      AdaBoost <- boosting(Overall.Y ~., data=data.frame(A,H))
+      mus.hat <- matrix(NA,n,length(class.A))
+      for (i in 1L:length(class.A))
+        mus.hat[,i]<-predict(AdaBoost,newdata=data.frame(A=rep(class.A[i],n),H))
+    }
+      else {
       stop("The method for estimating conditional means is not available!")
     }
 
@@ -261,7 +262,7 @@ MO.tol.DTRtree <- function(Ys,w,A,H, delta = 0, tolerate = TRUE,
 
 # New: compound AIPW estimator
 MO.tol.DTRtree<-function(Ys,w,A,H, delta = 0, tolerate = TRUE,
-                         pis.hat=NULL,m.method=c("AIPW","randomForest"),
+                         pis.hat=NULL,m.method=c("AIPW","randomForest","Adaboost"),
                          mus.reg=NULL,depth=5,lambda.pct=0.05,minsplit=20,
                          lookahead=F, PO.loss = NULL) {
 
@@ -318,20 +319,100 @@ MO.tol.DTRtree<-function(Ys,w,A,H, delta = 0, tolerate = TRUE,
     names(tree)<-c("node","X","cutoff","mEy","opt.trt", "avg.mEy", "tol.trt", outcome.names)
     tree[,1] <- 1L:nrow(tree) # this does not equal to the number of rows(2^k+1)
 
-    # propensity scores
-    pis.hat <- M.propen(A = A,Xs = H)
+    # # propensity scores
+    # pis.hat <- M.propen(A = A,Xs = H)
+    #
+    # # estimate mus.hat AIPW for each objectives
+    # list.mus.hat <- vector(mode='list', length = Obj.dim)
+    # for (i in 1:Obj.dim) {
+    #   mus.reg.i <- Reg.mu(Y = Ys[,i],As = A, H = H)$mus.reg
+    #   list.mus.hat[[i]] <- mus.AIPW(Y = Ys[,i], A = A, pis.hat = pis.hat, mus.reg = mus.reg.i)
+    # }
+    # # the compound AIPW estimates
+    # mus.hat = matrix(0, nrow = n, ncol = length(class.A))
+    # for (i in 1:Obj.dim) {
+    #   mus.hat = mus.hat + as.matrix(list.mus.hat[[i]]*w[i])
+    # }
 
-    # estimate mus.hat AIPW for each objectives
+    # estimate mus.hat if not given
+    list.mus.hat <- vector(mode='list', length = Obj.dim)
+    if (m.method == "AIPW") {
+      # estimate propensity matrix if not given, using all data
+      # same propensity for all subset data
+      if (is.null(pis.hat)) {
+        pis.hat <- M.propen(A = A,Xs = H)
+      }
+      # estimate mus.hat AIPW for each objectives
+      for (i in 1:Obj.dim) {
+        mus.reg.i <- Reg.mu(Y = Ys[,i],As = A, H = H)$mus.reg
+        list.mus.hat[[i]] <- mus.AIPW(Y = Ys[,i], A = A, pis.hat = pis.hat, mus.reg = mus.reg.i)
+      }
+      # the compound AIPW estimates
+      mus.hat = matrix(0, nrow = n, ncol = length(class.A))
+      for (i in 1:Obj.dim) {
+        mus.hat = mus.hat + as.matrix(list.mus.hat[[i]]*w[i])
+      }
+
+    # Random Forest
+    } else if (m.method == "randomForest") {
+      require(randomForest)
+      # RF <- randomForest(Overall.Y ~., data=data.frame(A,H))
+      # mus.hat <- matrix(NA,n,length(class.A))
+      # for (i in 1L:length(class.A))
+      #   mus.hat[,i]<-predict(RF,newdata=data.frame(A=rep(class.A[i],n),H))
+      # -------------------
+      # estimate mus.hat with RF for each objectives
+      for (i in 1:Obj.dim) {
+        RF.i <- randomForest(Ys[,i] ~., data=data.frame(A,H))
+        mus.hat <- matrix(0, nrow = n, ncol = length(class.A))
+        for (a in 1L:length(class.A)) {
+           mus.hat[,a] <- predict(RF.i, newdata=data.frame(A=rep(class.A[a],n),H))
+        }
+        list.mus.hat[[i]] <- mus.hat
+      }
+      # the compound RF estimates
+      mus.hat = matrix(0, nrow = n, ncol = length(class.A))
+      for (i in 1:Obj.dim) {
+        mus.hat = mus.hat + as.matrix(list.mus.hat[[i]]*w[i])
+      }
+
+    # Adaboost
+    } else if (m.method == "Adaboost") {
+      require(adabag)
+      for (i in 1:Obj.dim) {
+        #Ys[,i] = factor(Ys[,i])
+        Ada.i <- boosting(as.formula(paste(colnames(Ys)[i], "~", paste0(colnames(data.frame(A,H)), collapse = "+"))),
+                          data=data.frame(Ys,A,H),
+                          boos = TRUE,
+                          mfinal = 50,
+                          # control = rpart.control(minsplit = 0),
+                          # control = rpart.control(cp = -1),
+                          control = rpart.control(minsplit = 0, cp = -1)
+                          )
+
+        mus.hat <- matrix(0, nrow = n, ncol = length(class.A))
+        for (a in 1L:length(class.A)) {
+          mus.hat[,a] <- predict(Ada.i, newdata=data.frame(A=rep(class.A[a],n),H))
+        }
+        list.mus.hat[[i]] <- mus.hat
+      }
+      # the compound Adaboost estimates
+      mus.hat = matrix(0, nrow = n, ncol = length(class.A))
+      for (i in 1:Obj.dim) {
+        mus.hat = mus.hat + as.matrix(list.mus.hat[[i]]*w[i])
+      }
+    } else {
+      stop("The method for estimating conditional means is not available!")
+    }
+
+    # estimate mus.hat for each objectives
     list.mus.hat <- vector(mode='list', length = Obj.dim)
     for (i in 1:Obj.dim) {
+      pis.hat.i <- M.propen(A = A,Xs = H)
       mus.reg.i <- Reg.mu(Y = Ys[,i],As = A, H = H)$mus.reg
-      list.mus.hat[[i]] <- mus.AIPW(Y = Ys[,i], A = A, pis.hat = pis.hat, mus.reg = mus.reg.i)
+      list.mus.hat[[i]] <- mus.AIPW(Y = Ys[,i], A = A, pis.hat = pis.hat.i, mus.reg = mus.reg.i)
     }
-    # the compound AIPW estimates
-    mus.hat = matrix(0, nrow = n, ncol = length(class.A))
-    for (i in 1:Obj.dim) {
-      mus.hat = mus.hat + as.matrix(list.mus.hat[[i]]*w[i])
-    }
+
 
     # Expected outcome at root
     root <- Opt.A(A, mus.hat)
