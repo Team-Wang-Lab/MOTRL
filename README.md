@@ -1,15 +1,25 @@
 
 <!-- README.md is generated from README.Rmd. Please edit that file -->
 
-# MOTRL
+# MOT-RL
 
 <!-- badges: start -->
 <!-- badges: end -->
 
-The goal of MOTRL is to directly estimate optimal dynamic treatment
+## Introduction
+
+The goal of MOT-RL is to directly estimate optimal dynamic treatment
 regime (DTR) or tolerant DTR (tDTR) in a multi-stage multi-treatment
 setting. The users can self-define their preference on different
 priorities and the tolerant rate at each stage.
+
+In this README file, we provide a detailed instruction on the
+installation of the MOTRL package, its usage, and the interpretation of
+the result.
+
+More example code about the simulation in the manuscript can be found in
+the folder ‘vignettes’ at `Simulation_2D.Rmd` (2 objective cases) and
+`Simulation_3D.Rmd` (3 objective case).
 
 ## Installation
 
@@ -17,13 +27,13 @@ You can install the development version of MOTRL from
 [GitHub](https://github.com/) with:
 
 ``` r
-# install.packages("devtools")
-devtools::install_github("SelinaSong0412/MOTRL")
+install.packages("devtools")
+devtools::install_github("Team-Wang-Lab/MOTRL")
 ```
 
-## Example
+## Examples
 
-See below for two examples of using MOTRL to estimating tolerant DTR.
+See below for two examples of using MOT-RL to estimating tolerant DTR.
 
 ``` r
 library(MOTRL)
@@ -72,32 +82,66 @@ Then, we start to grow the DTR tree and the 60% tolerant DTR tree:
 w0 = 0.7         # set the weight on the first objective as 0.7
 wt = c(w0, 1-w0) # the weight vector is (0.7, 0.3)
 MOTRL0 = MO.tol.DTRtree(Ys1, w = wt, A1, H=X0, delta = 0, pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
-MOTRL0$tree      # return the MOTRL tree with zero tolerance (only the optimal treatment provided) 
+#> Warning in if (m.method == "AIPW") {: the condition has length > 1 and only the
+#> first element will be used
+MOTRL0$tree      # return the MOT-RL tree with zero tolerance (only the optimal treatment provided) 
 #>   node  X     cutoff      mEy opt.trt  avg.mEy tol.trt avg.mE(Y11) avg.mE(Y12)
-#> 1    1  2  0.5169215 4.183206      NA       NA      NA          NA          NA
-#> 2    2  1  0.5098781 4.440945      NA       NA      NA          NA          NA
-#> 3    3  1 -1.0087522 4.827241      NA       NA      NA          NA          NA
-#> 4    4 NA         NA 5.082690       0 5.082690       0    5.542246    4.010394
-#> 5    5 NA         NA 3.015530       1 3.015530       1    2.322286    4.633101
-#> 6    6 NA         NA 4.832783       0 4.832783       0    4.810765    4.884157
-#> 7    7 NA         NA 4.826251       2 4.826251       2    5.201142    3.951505
+#> 1    1  2  0.5169215 4.192301      NA       NA      NA          NA          NA
+#> 2    2  1  0.5098781 4.446549      NA       NA      NA          NA          NA
+#> 3    3  1 -1.0087522 4.832788      NA       NA      NA          NA          NA
+#> 4    4 NA         NA 5.087414       0 5.087414       0    5.542246    4.010394
+#> 5    5 NA         NA 3.023088       1 3.023088       1    2.322286    4.633101
+#> 6    6 NA         NA 4.855931       0 4.855931       0    4.810765    4.884157
+#> 7    7 NA         NA 4.828655       2 4.828655       2    5.201142    3.951505
 
 MOTRL1 = MO.tol.DTRtree(Ys1, w = wt, A1, H=X0, delta = 0.4, pis.hat=pis1.hat, lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
+#> Warning in if (m.method == "AIPW") {: the condition has length > 1 and only the
+#> first element will be used
 MOTRL1$tree      # return the 60% tolerant DTR tree
 #>   node  X     cutoff      mEy opt.trt  avg.mEy tol.trt avg.mE(Y11) avg.mE(Y12)
-#> 1    1  2  0.5169215 4.183206      NA       NA      NA          NA          NA
-#> 2    2  1  0.5098781 4.440945      NA       NA      NA          NA          NA
-#> 3    3  1 -1.0087522 4.827241      NA       NA      NA          NA          NA
-#> 4    4 NA         NA 5.082690       0 5.082690       0    5.542246    4.010394
-#> 5    5 NA         NA 3.015530       1 3.015530       1    2.322286    4.633101
-#> 6    6 NA         NA 4.832783       0 4.832783       0    4.810765    4.884157
-#> 7    7 NA         NA 4.826251       2 4.826251       2    5.201142    3.951505
+#> 1    1  2  0.5169215 4.192301      NA       NA      NA          NA          NA
+#> 2    2  1  0.5098781 4.446549      NA       NA      NA          NA          NA
+#> 3    3  1 -1.0087522 4.832788      NA       NA      NA          NA          NA
+#> 4    4 NA         NA 5.087414       0 5.087414       0    5.542246    4.010394
+#> 5    5 NA         NA 3.023088       1 3.023088       1    2.322286    4.633101
+#> 6    6 NA         NA 4.855931       0 4.855931       0    4.810765    4.884157
+#> 7    7 NA         NA 4.828655       2 4.828655       2    5.201142    3.951505
 
 # Run this to get the pseudo outcomes:
 # MOTRL1$POs
 # Run this to get the loss on pseudo outcome, which is used when generate the DTR tree for the previous stage:
 # MOTRL1$PO.loss
 ```
+
+To interpret the result, we take `MOTRL1$tree` as an example.
+
+-   The `node` column of the output represents the node number, the
+    number is marked from top to bottom and from left to right in a
+    binary split tree graph. Examples of how to number nodes can be
+    found in Figure 4 in Section 5 of the manuscript.
+
+-   the `X` column represents the tailoring variable (e.g. the 2 in the
+    first row means $X_2$ is the tailoring variable at node 1),
+
+-   the `cutoff` column represents the cutoff value in this tailoring
+    variable for node splitting (e.g. for node 1, subjects with
+    $X_2 < 0.5169215$ goes to node 2, otherwise, goes to node 3),
+
+-   the `mEy` column represents the weighted contractual mean outcome
+    for all subjects in this node,
+
+-   the `opt.trt` column represents the optimal treatment found by
+    MOT-RL in the node (only for leaves),
+
+-   the `ave.mEy` column represents the weighted contractual mean
+    outcome for all subjects in this node (same as `mEy` but only for
+    leaves),
+
+-   the `tol.trt` column represents the tolerant treatment found by
+    MOT-RL in the node (only for leaves),
+
+-   the `ave.mEy(*)` column represents the contractual mean outcome of
+    objective (\*) for all subjects in this node.
 
 **(b). Bi-objective scenario: two stages, three treatments**
 
@@ -133,29 +177,29 @@ We start the estimation from the second stage. Same weight vector (0.7,
 w21 = c(w0, 1-w0) # same weights 
 MOTRL20 = MO.tol.DTRtree(Ys2, w = w21, A2, H=cbind(X0,A1,Ys1), delta = 0, pis.hat=pis1.hat, 
                          lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
+#> Warning in if (m.method == "AIPW") {: the condition has length > 1 and only the
+#> first element will be used
 MOTRLtree20 = MOTRL20$tree
 MOTRLtree20
 #>   node  X      cutoff      mEy opt.trt  avg.mEy tol.trt avg.mE(Y21) avg.mE(Y22)
-#> 1    1  1 -0.03085405 3.851566      NA       NA      NA          NA          NA
-#> 2    2  5 -0.50321659 4.125072      NA       NA      NA          NA          NA
-#> 3    3  3 -0.99077712 5.403090      NA       NA      NA          NA          NA
-#> 4    4 NA          NA 5.076621       0 5.076621       0    5.598989    3.857762
-#> 5    5 NA          NA 3.696732       1 3.696732       1    3.249158    4.741071
-#> 6    6 NA          NA 5.115887       0 5.115887       0    5.683258    3.792024
-#> 7    7 NA          NA 5.462397       2 5.462397       2    5.801681    4.670734
+#> 1    1  1 -0.03085405 5.129994      NA       NA      NA          NA          NA
+#> 2    2 NA          NA 4.089238       1 4.089238       1    2.301012    4.032908
+#> 3    3  3 -0.99077712 7.019420      NA       NA      NA          NA          NA
+#> 6    6 NA          NA 4.705674       0 4.705674       0    5.683258    3.792024
+#> 7    7 NA          NA 7.497201       2 7.497201       2    5.801681    4.670734
 
 MOTRL21 <- MO.tol.DTRtree(Ys2, w = w21, A2, H=cbind(X0,A1,Ys1), delta = 0.4, pis.hat=pis1.hat, 
                           lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
+#> Warning in if (m.method == "AIPW") {: the condition has length > 1 and only the
+#> first element will be used
 MOTRLtree21 = MOTRL21$tree
 MOTRLtree21
 #>   node  X      cutoff      mEy opt.trt  avg.mEy tol.trt avg.mE(Y21) avg.mE(Y22)
-#> 1    1  1 -0.03085405 3.851566      NA       NA      NA          NA          NA
-#> 2    2  5 -0.50321659 4.125072      NA       NA      NA          NA          NA
-#> 3    3  3 -0.99077712 5.403090      NA       NA      NA          NA          NA
-#> 4    4 NA          NA 5.076621       0 5.076621       0    5.598989    3.857762
-#> 5    5 NA          NA 3.696732       1 3.696732       1    3.249158    4.741071
-#> 6    6 NA          NA 5.115887       0 5.115887       0    5.683258    3.792024
-#> 7    7 NA          NA 5.462397       2 5.462397       2    5.801681    4.670734
+#> 1    1  1 -0.03085405 5.129994      NA       NA      NA          NA          NA
+#> 2    2 NA          NA 4.089238       1 4.089238       1    2.301012    4.032908
+#> 3    3  3 -0.99077712 7.019420      NA       NA      NA          NA          NA
+#> 6    6 NA          NA 4.705674       0 4.705674       0    5.683258    3.792024
+#> 7    7 NA          NA 7.497201       2 7.497201       2    5.801681    4.670734
 ```
 
 Then, calculate the accumulated mean pseudo outcomes, and use it as the
@@ -171,26 +215,34 @@ PO.MOTRL21 = Ys1 + MOTRL21$PO.loss
 w11 = w21
 MOTRL10 = MO.tol.DTRtree(PO.MOTRL20, w = w11, A1, H=X0, delta = 0, pis.hat=pis1.hat, 
                          lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
+#> Warning in if (m.method == "AIPW") {: the condition has length > 1 and only the
+#> first element will be used
 MOTRL10$tree
-#>   node  X     cutoff      mEy opt.trt  avg.mEy tol.trt avg.mE(Y11) avg.mE(Y12)
-#> 1    1  2  0.5169215 6.349854      NA       NA      NA          NA          NA
-#> 2    2  1  0.5098781 6.657724      NA       NA      NA          NA          NA
-#> 3    3  1 -1.0087522 7.986483      NA       NA      NA          NA          NA
-#> 4    4 NA         NA 6.849552       0 6.849552       0    6.826217    6.904000
-#> 5    5 NA         NA 6.231644       1 6.231644       1    5.911325    6.979053
-#> 6    6 NA         NA 7.496037       0 7.496037       0    7.301645    7.949619
-#> 7    7 NA         NA 8.074062       2 8.074062       2    8.674228    6.673677
+#>    node  X     cutoff      mEy opt.trt  avg.mEy tol.trt avg.mE(Y11) avg.mE(Y12)
+#> 1     1  2  0.5169215 5.793848      NA       NA      NA          NA          NA
+#> 2     2  1  0.5098781 6.056146      NA       NA      NA          NA          NA
+#> 3     3  1 -1.0087522 7.318712      NA       NA      NA          NA          NA
+#> 4     4 NA         NA 5.998375       0 5.998375       0    5.753969    6.529313
+#> 5     5 NA         NA 6.184466       1 6.184466       1    5.816791    6.966871
+#> 6     6 NA         NA 6.042648       0 6.042648       0    5.557057    7.287680
+#> 7     7  2  1.6684238 8.212634      NA       NA      NA          NA          NA
+#> 14   14 NA         NA 8.264803       2 8.264803       2    8.633874    7.370360
+#> 15   15 NA         NA 7.978385       0 7.978385       0    9.647820    3.933660
 MOTRL11 <- MO.tol.DTRtree(PO.MOTRL21, w = w11, A1, H=X0, delta = 0.4,pis.hat=pis1.hat, 
                             lambda.pct=0.05, minsplit=max(0.05*N,20),depth = 3)
+#> Warning in if (m.method == "AIPW") {: the condition has length > 1 and only the
+#> first element will be used
 MOTRL11$tree
-#>   node  X     cutoff      mEy opt.trt  avg.mEy tol.trt avg.mE(Y11) avg.mE(Y12)
-#> 1    1  2  0.5169215 6.349854      NA       NA      NA          NA          NA
-#> 2    2  1  0.5098781 6.657724      NA       NA      NA          NA          NA
-#> 3    3  1 -1.0087522 7.986483      NA       NA      NA          NA          NA
-#> 4    4 NA         NA 6.849552       0 6.849552       0    6.826217    6.904000
-#> 5    5 NA         NA 6.231644       1 6.231644       1    5.911325    6.979053
-#> 6    6 NA         NA 7.496037       0 7.496037       0    7.301645    7.949619
-#> 7    7 NA         NA 8.074062       2 8.074062       2    8.674228    6.673677
+#>    node  X     cutoff      mEy opt.trt  avg.mEy tol.trt avg.mE(Y11) avg.mE(Y12)
+#> 1     1  2  0.5169215 5.793848      NA       NA      NA          NA          NA
+#> 2     2  1  0.5098781 6.056146      NA       NA      NA          NA          NA
+#> 3     3  1 -1.0087522 7.318712      NA       NA      NA          NA          NA
+#> 4     4 NA         NA 5.998375       0 5.998375       0    5.753969    6.529313
+#> 5     5 NA         NA 6.184466       1 6.184466       1    5.816791    6.966871
+#> 6     6 NA         NA 6.042648       0 6.042648       0    5.557057    7.287680
+#> 7     7  2  1.6684238 8.212634      NA       NA      NA          NA          NA
+#> 14   14 NA         NA 8.264803       2 8.264803       2    8.633874    7.370360
+#> 15   15 NA         NA 7.978385       0 7.978385       0    9.647820    3.933660
 ```
 
 **(c). Tri-objective scenario: one stage, three treatments**
@@ -248,42 +300,46 @@ Y13 <- 5.32 + x8 - exp(0.1 + 2*(x10 == "No"))*(1*(A1 == 1) + 0.5*(A1 == 0) + 0.1
 Ys1 = cbind(Y11, Y12, Y13)
 
 
-# MODTRtree and average potential outcome for each of the three objectives (with tolerant rate 100%, 60%)
+# MODTR tree and average potential outcome for each of the three objectives (with tolerant rate 100%, 60%)
 wt = c(w1, w2, w3)
 MOTRL0 = MO.tol.DTRtree(Ys1, w = wt, A1, H=X0, delta = 0, pis.hat=pis1.hat, lambda.pct=0.02, minsplit=20,depth = 4)
+#> Warning in if (m.method == "AIPW") {: the condition has length > 1 and only the
+#> first element will be used
 MOTRL0$tree
 #>   node  X     cutoff      mEy opt.trt  avg.mEy tol.trt avg.mE(Y11) avg.mE(Y12)
-#> 1    1  2 -0.2473256 3.169106      NA       NA      NA          NA          NA
-#> 2    2  1  0.4898486 4.339976      NA       NA      NA          NA          NA
-#> 3    3  1  0.4257702 3.395700      NA       NA      NA          NA          NA
-#> 4    4 NA         NA 4.195472       0 4.195472       0    5.761938    3.607119
-#> 5    5 NA         NA 4.644771       2 4.644771       2    6.380001    2.660269
-#> 6    6 NA         NA 2.953202       1 2.953202       1    2.713906    5.338161
-#> 7    7 NA         NA 4.181280       2 4.181280       2    4.710263    3.068433
+#> 1    1  2 -0.2473256 3.182414      NA       NA      NA          NA          NA
+#> 2    2  1  0.4898486 4.339314      NA       NA      NA          NA          NA
+#> 3    3  1  0.4738403 3.412394      NA       NA      NA          NA          NA
+#> 4    4 NA         NA 4.187836       0 4.187836       0    5.761938    3.607119
+#> 5    5 NA         NA 4.658819       2 4.658819       2    6.380001    2.660269
+#> 6    6 NA         NA 2.939191       1 2.939191       1    2.692072    5.324977
+#> 7    7 NA         NA 4.288142       2 4.288142       2    4.779649    3.177743
 #>   avg.mE(Y13)
 #> 1          NA
 #> 2          NA
 #> 3          NA
 #> 4   3.0543405
 #> 5   4.9355880
-#> 6   0.4499286
-#> 7   4.8624555
+#> 6   0.4460766
+#> 7   4.8472891
 MOTRL1 <- MO.tol.DTRtree(Ys1, w = wt, A1, H=X0, delta = 0.4,pis.hat=pis1.hat, lambda.pct=0.02, minsplit=20,depth = 4)
+#> Warning in if (m.method == "AIPW") {: the condition has length > 1 and only the
+#> first element will be used
 MOTRL1$tree
 #>   node  X     cutoff      mEy opt.trt  avg.mEy tol.trt avg.mE(Y11) avg.mE(Y12)
-#> 1    1  2 -0.2473256 3.169106      NA       NA      NA          NA          NA
-#> 2    2  1  0.4898486 4.339976      NA       NA      NA          NA          NA
-#> 3    3  1  0.4257702 3.395700      NA       NA      NA          NA          NA
-#> 4    4 NA         NA 4.195472       0 4.195472       0    5.761938    3.607119
-#> 5    5 NA         NA 4.644771       2 4.644771       2    6.380001    2.660269
-#> 6    6 NA         NA 2.953202       1 2.708146    1, 2    2.573929    2.856121
-#> 7    7 NA         NA 4.181280       2 4.181280       2    4.710263    3.068433
+#> 1    1  2 -0.2473256 3.182414      NA       NA      NA          NA          NA
+#> 2    2  1  0.4898486 4.339314      NA       NA      NA          NA          NA
+#> 3    3  1  0.4738403 3.412394      NA       NA      NA          NA          NA
+#> 4    4 NA         NA 4.187836       0 4.187836       0    5.761938    3.607119
+#> 5    5 NA         NA 4.658819       2 4.658819       2    6.380001    2.660269
+#> 6    6 NA         NA 2.939191       1 2.698213    1, 2    2.560962    2.839759
+#> 7    7 NA         NA 4.288142       2 4.288142       2    4.779649    3.177743
 #>   avg.mE(Y13)
 #> 1          NA
 #> 2          NA
 #> 3          NA
 #> 4    3.054341
 #> 5    4.935588
-#> 6    2.692097
-#> 7    4.862455
+#> 6    2.693742
+#> 7    4.847289
 ```
