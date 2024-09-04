@@ -127,20 +127,20 @@ To interpret the result, we take `MOTRL1$tree` as an example.
     variable for node splitting (e.g. for node 1, subjects with
     $X_2 < 0.5169215$ goes to node 2, otherwise, goes to node 3),
 
--   the `mEy` column represents the weighted contractual mean outcome
+-   the `mEy` column represents the weighted counterfactual mean outcome
     for all subjects in this node,
 
 -   the `opt.trt` column represents the optimal treatment found by
     MOT-RL in the node (only for leaves),
 
--   the `ave.mEy` column represents the weighted contractual mean
+-   the `ave.mEy` column represents the weighted counterfactual mean
     outcome for all subjects in this node (same as `mEy` but only for
     leaves),
 
 -   the `tol.trt` column represents the tolerant treatment found by
     MOT-RL in the node (only for leaves),
 
--   the `ave.mEy(*)` column represents the contractual mean outcome of
+-   the `ave.mEy(*)` column represents the counterfactual mean outcome of
     objective (\*) for all subjects in this node.
 
 **(b). Bi-objective scenario: two stages, three treatments**
